@@ -8,28 +8,19 @@ editor: visual
 
 ```{r load}
 
-#load packages
+# load packages
 source(here::here('scripts', 'library.R')) 
 
 # load data 
 # change path accordingly 
-load("C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\data_oecd_crs_clean.RData")
+load("C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\outcome\\data_crs.RData")
 ```
 
 ## Quantity
 
-+ Focus on Official Development Assistance (ODA): Grants (11) and Loans (13)
-
 + Commitments in constant dollars
 
-> Extensions: consider (i) disbursements; (ii) alternative definitions of nonzero outcomes, based on rounding (ex: at 0.001 MUSD unit) and by including a threshold (ex: \>= 1 000 USD).
-
-```{r data_oda}
-
-data_oda <- data_crs |>
-# keep only ODA grants and loans
-  filter(flow_code %in% c(11, 13))
-```
+> To do: consider disbursements.
 
 ### Channels
 
@@ -38,14 +29,28 @@ non-State/Official: Multilateral Organizations
 non-State/non-Official: NGOs and Civil Society, University, college or other teaching institution, research institute or think‑tank
 non-State/non-Official: PPPs and Networks, Private Sector
 
-channel_state = c(10000:12000)
-channel_nonstate = c(20000:63000)
-channel_nonstate_ngo = c(20000:23000, 51000)
-channel_nonstate_multi = c(40000:47000)
-channel_nonstate_priv = c(30000:32000, 60000:63000)
-channel_other = 90000
-
 ### Co-operation modalities
+
+1. Debt relief
+2. Budget support: General and Sector
+3. Core contributions
+4. Pooled funding
+5. Project-type interventions and Other TA
+
+### Sectors
+
+1. Debt relief
+2. Budget support
+3. Social infrastructure & services
+4. Economic infrastructure & services
+5. Food and Commodity Assistance (in kind)
+6. Humanitarian (Prevention-Emergency-Reconstruction)
+7. Unallocated/Unspecified
+(In Donor)
+
+> **To do (1)**: cross-tables channels, modalities, and sectors + type of flow.
+
+> **To do (2)**: add new variable sector_main_code
 
 ## Unit of observation
 
@@ -73,42 +78,11 @@ length(unique(data_crs$recipient_id))
 # pairs
 length(unique(data_crs$donor_id)) * length(unique(data_crs$recipient_id))
 ```
-I remove flows to no specific countries, allocated at the regional level.
-
-```{r data_unit}
-data_unit <- data_oda |> 
-# remove "regional" recipients
-  filter(!grepl("regional", recipient_name))
-```
-
-> Flows allocated at the regional level represent 8% of total ODA commitments.
-
-```{r sh_reg}
-
-summarize(data_oda,
-          regional = sum(usd_commitment_defl[grepl("regional", recipient_name)], na.rm = T),
-          total = sum(usd_commitment_defl, na.rm = T),
-          reg_share_total = regional/total * 100
-          )
-```
-
-## Time period
-
-The channel of delivery became an optional reporting item on the new CRS++ reporting scheme in 2004 (cf. Dietrich 2013), so the outcome sample starts at this date. The sample ends in 2022.
-
-```{r data_time}
-
-data_time <- data_unit |> 
-  filter(year %in% c(2005:2018))
-```
-
-> Note: The treatment sample ends in 2018, the last year available in the GDIS dataset. It results that the final sample is constrained by the outcome sample at its start and by the treatment sample at its end. The final sample covers the period 2005-2018 (13 years).
-
 ## Sample
 
 ```{r data_sample}
 
-data_sample <- data_time
+data_sample <- data_crs
 ```
 
 + **Unit of observation**
@@ -130,27 +104,20 @@ unit_outcome <- data_sample |>
 quantity_outcome <- data_sample |> 
   summarize(
 # total  
-  commit = sum(usd_commitment_defl, na.rm = T),
+  commit_total = sum(usd_commitment_defl, na.rm = T),
 # channels of delivery 
   commit_nonstate = sum(usd_commitment_defl[channel_nonstate==1], na.rm = T),
-  commit_nonstate_ngo = sum(usd_commitment_defl[channel_nonstate_ngo==1], na.rm = T),
-  commit_nonstate_multi = sum(usd_commitment_defl[channel_nonstate_multi==1], na.rm = T),
-  commit_nonstate_priv = sum(usd_commitment_defl[channel_nonstate_private==1], na.rm = T), 
-  .by = c(donor_id, recipient_id, year)
-) |> head()
-  
- 
 # co-operation modalities
   commit_budg = sum(usd_commitment_defl[grepl("^A0", aid_t)], na.rm = T),
-  commit_multi_core = sum(usd_commitment_defl[aid_t=="B01|B02"], na.rm = T),
-  commit_multi_pool = sum(usd_commitment_defl[grepl("^B03", aid_t)], na.rm = T),
-  commit_proj = sum(usd_commitment_defl[aid_t=="C01\|D02"], na.rm = T), 
+  commit_proj = sum(usd_commitment_defl[aid_t=="C01|D02"], na.rm = T), 
 # flow types
   commit_grant = sum(usd_commitment_defl[flow_code==11], na.rm = T),
   commit_loan = sum(usd_commitment_defl[flow_code==13], na.rm = T), 
 .by = c(donor_id, recipient_id, year)
 )
 ```
+
++ **Merge**
 
 ```{r outcome}
 
@@ -159,43 +126,16 @@ outcome <- merge(unit_outcome, quantity_outcome,
                  by=c("donor_id", "recipient_id", "year"), all.x = TRUE) |> 
 # treat "true" zeros: NA if country's registration in OECD CRS > current period
   mutate(across(starts_with("commit_"), ~ ifelse(
-    is.na(.x) & (cohort_donor <= year | cohort_recipient <= year), 0, .x))) |> 
-  # create binary outcome vars
-  mutate(commit_dummy = case_when( 
-    commit > 0 ~ 1, is.na(commit) ~ NA, .default = 0)
-    )
+    is.na(.x) & (cohort_donor <= year | cohort_recipient <= year), 0, .x)))
 ```
 
+> **To do**: consider alternative definitions of nonzero outcomes, based on (i) rounding (ex: at 0.001 MUSD unit) and (ii) by including a threshold (ex: >= 1 000 USD).
 
-## Sectors
-
-+ Remove donor administrative costs, donor country personnel, and debt relief
-
-+ table w/ sectors (row) and channels+modalities (columns)
-
-Add new variable sector_main_code
-
-Table with Total commitments (%) per sectors
-
-Table with Total channels & modalities (%) per sectors
-
-```{r}
-# remove Administrative costs not included elsewhere (G01), Donor country personnel (D01), Debt relief (F01)  
-  filter(!aid_t %in% c("G01", "D01", "F01")) |> 
-  filter(!grepl("^(6\|9)", purpose_code))
-```
-
-
-## Sample
-
-```{r outcome_dupes}
-
-janitor::get_dupes(outcome, purpose_code, recipient_id, year)
-```
++ **ISO codes**
 
 ```{r iso}
 
-# outcome dataset
+# add new variable
 outcome$iso3c <- countrycode(sourcevar = outcome[, "recipient_name"], 
                              origin = "country.name", destination = "iso3c", warn = T) 
 # some values were not matched unambiguously: Kosovo, Micronesia 
@@ -204,11 +144,24 @@ outcome <- outcome |>
     recipient_name=="Micronesia" ~ "FSM",
     recipient_name=="Kosovo" ~ "XXK", 
     .default = iso3c )
-    )
+    ) |> 
+  relocate(iso3c, .after = recipient_name)
 ```
 
-```{r}
-outcome <- subset(outcome, select = -recipient_id)
++ **Time**
+
+The channel of delivery became an *optional* reporting item on the new CRS++ reporting scheme in 2004 ([@dietrich2013]).
+
+```{r time}
+
+outcome <- filter(outcome, year > 2004)
+```
+
++ **Duplicates**
+
+```{r outcome_dupes}
+
+janitor::get_dupes(outcome, donor_id, recipient_id, year)
 ```
 
 # Appendix
@@ -225,5 +178,10 @@ outcome <- subset(outcome, select = -recipient_id)
 
 ```{r}
 
-save(outcome, file = here("data", "data_outcome.RData")) rm(delivery_crs_code, data_oda, data_unit, unit_outcome, quantity_outcome)
+# save
+save(outcome, 
+     file =  "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\outcome\\data_outcome.RData")
+
+# remove
+rm(list = ls())
 ```
