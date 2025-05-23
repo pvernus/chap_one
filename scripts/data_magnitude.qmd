@@ -1,0 +1,781 @@
+---
+title: 'Magnitude'
+format: html
+editor: visual
+---
+
+```{r load_pckg, include=FALSE, cache=FALSE}
+
+source(here::here('scripts', 'library.R'))
+```
+
+# Hazard severity (S)
+
+## Precipitation
+
+```{r import}
+
+## Define the directory
+data_path <- here::here('source', 'treatment', 'mswep')
+
+## Define the file pattern
+# sd: values = nb of days w/ SPI1 >= +2.0
+sd_files <- list.files(data_path, pattern = '^floodday_sd', full.names = TRUE)
+# max: values = cum.sum precipitation (mm) for x wettest day(s)
+max_files <- list.files(data_path, pattern = '^floodday_max', full.names = TRUE)
+
+## Import all .dta files into a list
+data_sd_list <- lapply(sd_files, haven::read_dta)
+data_max_list <- lapply(max_files, haven::read_dta)
+
+## Name the list
+# sd
+names(data_sd_list) <- sapply(basename(sd_files), function(x) {
+  substr(x, nchar(x) - 8, nchar(x) - 4) # Extract the last three characters before '.dta'
+})
+# max
+names(data_max_list) <- sapply(basename(max_files), function(x) {
+  substr(x, nchar(x) - 9, nchar(x) - 4) # Extract the last three characters before '.dta'
+})
+
+## Clean variables' names
+data_sd_list <- lapply(data_sd_list, janitor::clean_names) # sd
+data_max_list <- lapply(data_max_list, janitor::clean_names) # max
+
+## Pivot from wide to long: year
+# sd 
+data_sd_list <- lapply(data_sd_list, function(df) {
+  pivot_longer(df, 
+               cols = -geo_id, 
+               names_to = 'year', 
+               names_prefix = 'test', 
+               values_to = 'value')
+})
+
+# max
+data_max_list <- lapply(data_max_list, function(df) {
+  pivot_longer(df, 
+               cols = -geo_id, 
+               names_to = 'year', 
+               names_prefix = 'm', 
+               values_to = 'value')
+})
+
+## rename value columns
+# sd
+data_sd_list <- lapply(names(data_sd_list), function(name) {
+  df <- data_sd_list[[name]]
+  colnames(df)[colnames(df) == 'value'] <- name
+  df
+})
+
+data_sd_list <- lapply(data_sd_list, function(df) {
+  colnames(df)[3] <- sub("_.*", "", colnames(df)[3])
+  return(df)
+})
+# max
+data_max_list <- lapply(names(data_max_list), function(name) {
+  df <- data_max_list[[name]]
+  colnames(df)[colnames(df) == 'value'] <- name
+  df
+})
+
+data_max_list <- lapply(data_max_list, function(df) {
+  colnames(df)[3] <- sub("_.*", "", colnames(df)[3])
+  return(df)
+})
+
+## Pivot: value
+#
+data_sd_list <- lapply(data_sd_list, function(df) {
+  pivot_longer(df, 
+               cols = -c(geo_id, year), 
+               names_to = 'prec', 
+               values_to = 'prec_value')
+})
+# max
+data_max_list <- lapply(data_max_list, function(df) {
+  pivot_longer(df, 
+               cols = -c(geo_id, year), 
+               names_to = 'prec', 
+               values_to = 'prec_value')
+})
+
+## join elements of the list
+# sd
+data_sd <- reduce(data_sd_list, bind_rows)
+# max
+data_max <- reduce(data_max_list, bind_rows)
+
+## remove useless objects
+rm(data_sd_list, data_max_list)
+```
+
+```{r}
+
+## summary stat.
+# sd
+summary(data_sd$prec_value)
+# max
+summary(data_max$prec_value)
+```
+
+```{r plot_density}
+
+## visualize distributions
+## density
+# sd
+data_sd |> 
+  ggplot(aes(x = prec_value, group=prec)) +
+  geom_density(aes(colour=prec, fill = prec), alpha = .3) +
+  theme_light()
+# max
+data_max |> 
+  ggplot(aes(x = prec_value, group=prec)) +
+  geom_density(aes(colour=prec, fill = prec), alpha = .3) +
+  theme_light()
+
+```
+
+```{r plot_stat_desc}
+
+### visualize trends
+
+## mean
+# sd
+summarize(data_sd, mean = mean(prec_value), .by = c('year', 'prec')) |> 
+  ggplot(aes(x = year, y = mean, group = prec)) +
+  geom_line(aes(colour = prec)) +
+  labs(y = 'Mean # of days > prec') +
+  theme_light()
+# max
+summarize(data_max, mean = mean(prec_value), .by = c('year', 'prec')) |> 
+  ggplot(aes(x = year, y = mean, group = prec)) +
+  geom_line(aes(colour = prec)) +
+  labs(y = 'Mean max.cum. precipitation (mm)') +
+  theme_light()
+ 
+## median
+# sd
+summarize(data_sd, median = median(prec_value), .by = c('year', 'prec')) |> 
+  ggplot(aes(x = year, y = median, group = prec)) +
+  geom_line(aes(colour = prec)) +
+  labs(y = 'Median # of days > prec') +
+  theme_light()
+# max
+summarize(data_max, median = median(prec_value), .by = c('year', 'prec')) |> 
+  ggplot(aes(x = year, y = median, group = prec)) +
+  geom_line(aes(colour = prec)) +
+  labs(y = 'Median max.cum. precipitation (mm)') +
+  theme_light()
+
+## IQR
+# sd
+summarize(data_sd, IQR = IQR(prec_value), .by = c('year', 'prec')) |> 
+  ggplot(aes(x = year, y = IQR, group = prec)) +
+  geom_line(aes(colour = prec)) +
+  labs(y = 'IQR # of days > prec') +
+  theme_light()
+# max
+summarize(data_max, IQR = IQR(prec_value), .by = c('year', 'prec')) |> 
+  ggplot(aes(x = year, y = IQR, group = prec)) +
+  geom_line(aes(colour = prec)) +
+  labs(y = 'IQR max.cum. precipitation (mm)') +
+  theme_light()
+
+```
+
+```{r merge_prec}
+
+## compare unique number of geo_id (identifier) 
+n_distinct(data_sd$geo_id)
+n_distinct(data_max$geo_id)
+
+## bind precipitation data 
+data_prec <- rbind(data_sd, data_max)
+
+```
+
+## Disaster events
+
+```{r load}
+
+# Load datasets
+load(here('data', 'data_emdat_clean.RData')) # EM-DAT
+load(here('source', 'treatment', 'gdis', 'pend-gdis-1960-2018-disasterlocations.Rdata')) # GDIS
+```
+
+```{r clean_emdat}
+
+## EMDAT
+data_emdat_short <- data_emdat |> 
+  dplyr::select(dis_no, classification_key, disaster_type, iso, country, location, start_year, end_year, last_update) |> 
+  filter(start_year %in% 2000:2018) |> # time period
+  filter(grepl('nat-hyd-flo|nat-cli-dro', classification_key)) |> # disaster type
+  mutate(disasterno = stringr::str_sub(dis_no, end = -5)) |> 
+  mutate(iso3c = countrycode(sourcevar = country,
+                             origin = 'country.name',
+                             destination = 'iso3c'
+  )) |> 
+  mutate(iso3c = case_when(
+# NOTE: Canary Islands
+    country == "Canary Islands" ~ "ESP",
+# NOTE: Serbia Montenegro (iso==SCG)
+# In variable 'location', we can fin the name of one of the two countries at the end of the char. string
+# I assume that it provides the true location
+    iso == "SCG" & grepl("Serbia)$", str_squish(location)) ~ "SRB",
+    iso == "SCG" & grepl("Montenegro)$", str_squish(location)) ~ "MNE",
+# NOTE: Kosovo
+# Some obs.  in Kosovo in GDIS, but in Serbia in EMDAT
+# Kosovo is included in OECD CRS since 2009 (declaration of independence in 2008)
+# Rule: if year < 2009 => Serbia (SRB) & if year >= 2009 => Kosovo (XKX)
+# In EMDAT, two obs. don't apply to this rule
+    dis_no %in% c("2013-0379-SRB", "2016-0446-SRB") ~ "XKX",
+# NOTE South Sudan: 
+# South Sudan is included in OECD CRS since 2011 (independent State in 2011)
+# Rule: if year < 2011 => Sudan (SDN) & if year >= 2011 => South Sudan (SSD)
+    country=='South Sudan' & start_year >= 2011 ~ 'SSD',
+    country=='South Sudan' & start_year < 2011 ~ 'SDN',
+    .default = iso3c
+         )) |> 
+# NOTE: duplicated obs. dis_n=="2010-0579" with two different location
+# dis_no == "2010-0579-SDN": entry_date==2011; country=="Sudan") / 
+# dis_no == "2010-0579-SSD": entry_date==2016; country=="South Sudan"
+# I keep the observation which follows the rule set above  
+  filter(dis_no != "2010-0579-SSD")
+
+```
+
+```{r clean_gdis}
+
+## GDIS
+data_gdis <- sf::st_set_geometry(GDIS_disasterlocations, NULL) # remove geometry
+data_gdis_short <- data_gdis |> 
+  dplyr::select(disasterno, dis_id = id, geo_id, disastertype, iso3, country) |> 
+  mutate(year = as.numeric(substr(data_gdis$disasterno, 1, 4))) |> # time period
+  filter(year >= 2000) |> 
+  mutate(disastertype = trimws(disastertype)) |> # disaster type
+  filter(disastertype %in% c('flood', 'drought')) |> 
+  mutate(iso3c = countrycode(sourcevar = country,
+                             origin = 'country.name',
+                             destination = 'iso3c'
+  )) |> 
+  mutate(iso3c = case_when(
+# Micronesia    
+    country=='Micronesia' ~ 'FSM',
+# NOTE Kosovo: same rule as for EMDAT
+    country=='Kosovo' & year >= 2009 ~ 'XKX',
+    country=='Kosovo' & year < 2009 ~ 'SRB',
+# NOTE South Sudan: same rule as for EMDAT
+    country=='South Sudan' & year >= 2011 ~ 'SSD',
+    country=='South Sudan' & year < 2011 ~ 'SDN',
+    .default = iso3c
+    )) |> 
+# NOTE: UKR/Crimea:
+# disasterno=='2002-0482': three obs. in GDIS incl. one in Crimea/UKR (geo_id==22653) != RUS in EMDAT
+# For now, I remove the UKR obs. geo_id
+  filter(geo_id != 22653)
+
+```
+
+```{r compare_data}
+
+## compare nb of events
+length(unique(data_gdis_short$disasterno))
+length(unique(data_emdat_short$disasterno))
+
+## events in gdis, missing in emdat
+anti_join(distinct(data_gdis_short, disasterno),
+          distinct(data_emdat_short, disasterno),
+          by = "disasterno")
+# NOTE: 9 events in GDIS w/out a match in EMDAT
+
+## events in emdat, missing in gdis
+anti_join(distinct(data_emdat_short, disasterno, start_year),
+          distinct(data_gdis_short, disasterno),
+          by = "disasterno")
+# NOTE: 138 events in EMDAT w/out a match in GDIS
+
+# Note sure why. Not what I would expect, as EMDAT has been updated after GDIS
+# disasterno==2004-0568: classified as storm in emdat vs. flood in gdis
+# For the rest, maybe recent updates in EMDAT deleted/changes some disasterno included in GDIS?
+
+```
+
+```{r compare_data_freq}
+
+## compare events frequency each year, by disaster type
+# gdis
+summarize(data_gdis_short,
+          n = length(unique(disasterno)),
+          .by = c(year, disastertype)) |> 
+  arrange(year) |> 
+  ggplot(aes(x=year, y=n)) +
+  geom_line() +
+  facet_wrap(~disastertype, scales = 'free_y') +
+  theme_light()
+# emdat
+summarize(data_emdat_short,
+          n = length(unique(disasterno)),
+          .by = c(start_year, disaster_type)) |> 
+  arrange(start_year) |> 
+  ggplot(aes(x=start_year, y=n)) +
+  geom_line() +
+  facet_wrap(~disaster_type, scales = 'free_y') +
+  theme_light()
+
+```
+
+```{r join_gdis_emdat}
+
+## merge gdis and emdat (by = disasterno)
+join_gdis_emdat <- left_join(data_gdis_short, data_emdat_short, 
+                             by = c('disasterno', 'iso3c'),
+                             suffix = c('_gdis', '_emdat'))
+```
+
+```{r missing_data}
+
+## Missing data
+# by disaster type
+join_gdis_emdat |> 
+  filter(is.na(dis_no)) |> 
+  janitor::tabyl(disastertype) |> 
+  arrange(desc(n))
+
+# by country
+join_gdis_emdat |> 
+  filter(is.na(dis_no)) |> 
+  janitor::tabyl(iso3c) |> 
+  arrange(desc(n))
+
+# number of country per disaster-ID with missing data in em-dat
+join_gdis_emdat |> 
+  filter(is.na(dis_no)) |>
+  summarize(n = n_distinct(iso3c), .by = disasterno) |> 
+  arrange(desc(n))
+
+```
+
+## Precipitation by disaster event
+
+```{r data_severity}
+
+## merge disaster and precipitation datasets (by = geo_id)
+data_severity <- left_join(data_prec, join_gdis_emdat, 
+          by = c('geo_id'),
+          suffix = c('', '_dis')) |> 
+  mutate(year = as.numeric(year))
+
+```
+
+```{r check_obs}
+
+# CHECK: object should have the same number of obs. as data_prec
+length(unique((data_severity$geo_id)))
+length(unique((data_prec$geo_id)))
+
+# id in event data, missing in precipitation data
+anti_join(join_gdis_emdat, 
+          data_prec,
+          by = c('geo_id'))
+# NOTE: missing obs. due to missing country filter on event data (includes donors)
+```
+
+```{r missing_data}
+
+# Missing data
+data_severity |> 
+  filter(is.na(dis_no))
+
+data_severity |> 
+  filter(is.na(dis_no)) |> 
+  distinct(country_gdis, iso3c)
+
+data_severity |> 
+  filter(is.na(dis_no)) |> 
+  distinct(iso3c, geo_id)
+
+```
+
+```{r}
+
+## create disaster_year dummy
+data_severity <- data_severity |> 
+  mutate(year_dis_dummy = ifelse(year == year_dis, 'Flood', 'No Flood'))
+
+```
+
+```{r}
+
+# Boxplot
+data_severity |> 
+  ggplot(aes(x = year_dis_dummy, y = prec_value)) +
+  geom_boxplot(outliers = FALSE) +
+  facet_wrap(~prec, scales = 'free_y') +
+  theme_light() +
+  labs(y = 'Nb of days (sd) / total mm (max)')
+
+```
+
+```{r}
+
+## See if maximum precip values occur during 'flood' years
+
+data_pct <- subset(data_severity, 
+                   select = c(geo_id, year, year_dis_dummy, prec, prec_value)) |>
+  mutate(max = max(prec_value), .by = c('geo_id', 'prec')) |> 
+  mutate(rank = percent_rank(prec_value), .by = c('geo_id', 'prec')) |> 
+  mutate(
+    p50 = ifelse(rank >=.5, 1, 0),
+    p75 = ifelse(rank >=.75, 1, 0),
+    p90 = ifelse(rank >=.9, 1, 0)
+    )
+           
+# all
+rprop(xtabs(~ year_dis_dummy + p50, data_pct))
+rprop(xtabs(~ year_dis_dummy + p75, data_pct))
+rprop(xtabs(~ year_dis_dummy + p90, data_pct))
+
+# sd
+rprop(xtabs(~ year_dis_dummy + p50, data_pct |> filter(prec=='sd2'))) # p50
+rprop(xtabs(~ year_dis_dummy + p50, data_pct |> filter(prec=='sd4')))
+rprop(xtabs(~ year_dis_dummy + p90, data_pct |> filter(prec=='sd2'))) # p90
+rprop(xtabs(~ year_dis_dummy + p90, data_pct |> filter(prec=='sd4')))
+
+# max     
+rprop(xtabs(~ year_dis_dummy + p50, data_pct |> filter(prec=='max1'))) # p50
+rprop(xtabs(~ year_dis_dummy + p50, data_pct |> filter(prec=='max5')))
+rprop(xtabs(~ year_dis_dummy + p90, data_pct |> filter(prec=='max1'))) # p90
+rprop(xtabs(~ year_dis_dummy + p90, data_pct |> filter(prec=='max5')))
+
+## See in which year maximum values occured
+data_pct |> 
+  pivot_longer(
+    cols = p50:p90,
+    names_to = "pct",
+    values_to = "pct_dummy") |> 
+  summarize(n = sum(pct_dummy),
+            .by = c(year, prec, pct)) |> 
+  mutate(year = as.integer(year)) |> 
+  ggplot(aes(x = year, y = n, group=pct)) +
+  geom_line(aes(colour=pct)) + 
+  facet_wrap(~prec, scales = 'free_y', nrow = 2, ncol = 4) +
+  theme_light() +
+  labs(x = 'Year', y = 'Freq', title = 'Nb of geo_id w/ prec > pct')
+
+# NOTE: (i) cyclicality, (ii) picks in 2004/5 and in 2010
+# cf. El-Nino episodes en 2002-2003, 2004-2005, 2006-2007 et 2009-2010
+# source: https://meteofrance.com/comprendre-climat/monde/el-nino-et-la-nina
+
+rm(data_max)
+```
+
+```{r reg}
+
+## regression??
+
+```
+
+# Hazard exposure (E)
+
+## Landscan (pop)
+
+```{r data_landscan}
+
+# Define the folder path containing the .xlsx files
+folder_path <- here('source', 'treatment', 'landscan')
+
+# List all files in the folder with the specified pattern
+files <- list.files(path = folder_path, pattern = 'landscan_flood_\\d{4}\\.xlsx', full.names = TRUE)
+
+# Function to read files and add year column
+process_file <- function(file_path) {
+  # Extract the year from the file name
+  year <- str_extract(file_path, '(?<=landscan_flood_)\\d{4}') %>% as.numeric()
+  
+  # Validate the year range
+  if (year %in% 2001:2022) {
+    # Read the Excel file
+    data <- read_excel(file_path, col_types = c('numeric', 'numeric', 'text', 
+        'text', 'text', 'text', 'numeric', 
+        'text', 'text', 'text', 'text', 'text', 
+        'text', 'numeric', 'text', 'text', 
+        'text', 'numeric', 'text', 'numeric', 
+        'text', 'numeric', 'numeric', 'numeric'))
+    # Add the year column
+    data <- data |> 
+      janitor::clean_names() |> 
+      mutate(year = year) |> 
+      rename_with(~ gsub('^pop_.*', 'pop', .), starts_with('pop_'))
+    return(data)
+  }
+  return(NULL) # Return NULL for invalid years
+}
+
+# Process all files and combine the results
+data_landscan <- files |> 
+  lapply(process_file) |>       # Apply the processing function
+  compact() |>                  # Remove NULLs from the list
+  bind_rows()                   # Combine all data frames into one
+
+```
+
+```{r data_landscan_short}
+
+## NOTE: measurement errors
+# population estimations can vary widely from one year to another
+# I compute trailing moving averages (k=3) to smooth pop estimations
+
+data_landscan_short <- subset(data_landscan,
+  select = c(geo_id, year, disasterno, pop)) |> 
+  group_by(geo_id) |> 
+  mutate(pop_tma = zoo::rollmean(pop, k = 3, fill = NA, align = "right")) |> 
+# due to k=3, missing pop data in before 2003
+  filter(year >= 2003) |> 
+  pivot_longer(
+    cols = starts_with("pop"),
+    names_to = "pop",
+    values_to = "pop_value") |> 
+  ungroup() |> 
+  arrange(geo_id)
+
+head(data_landscan_short)
+```
+
+## Modis (land cover)
+
+```{r data_modis}
+
+# Define the folder path containing the .xlsx files
+folder_path <- here('source', 'treatment', 'modis')
+
+# List all files in the folder with the specified pattern
+files <- list.files(path = folder_path, pattern = '*.xlsx', full.names = TRUE)
+
+# Function to read files and add year column
+process_file <- function(file_path) {
+  # Extract the year from the file name
+  year <- str_extract(file_path, '(?<=modis_flood_)\\d{4}') |> as.numeric()
+  
+  # Validate the year range
+  if (year %in% 2001:2022) {
+    # Read the Excel file
+    data <- read_excel(file_path)
+    # Add the year column
+    data <- data |> 
+      janitor::clean_names() |> 
+      mutate(year = year)
+  }
+  else {
+    NULL # Return NULL for invalid years
+  }
+}
+
+# Process all files and combine the results
+data_modis <- files |> 
+  lapply(process_file) |> # Apply the processing function
+  compact() |> # Remove NULLs from the list (requires `purrr` library or alternative filtering)
+  bind_rows() # Combine all data frames into one
+
+```
+
+```{r data_modis_short}
+
+## Land cover classification
+# see: https://modis-land.gsfc.nasa.gov/pdf/MCD12Q1_C6_Userguide04042018.pdf
+
+# Croplands: 12
+# Cropland/Natural Vegetation Mosaics: 14
+# Urban and Built-up Lands: 13
+
+data_modis_short <- data_modis |> 
+  mutate(land_crop = c_12 + c_14,
+         land_urb = c_13) |> 
+  dplyr::select(geo_id, year, disasterno, starts_with("land")) |> 
+  pivot_longer(
+    cols = starts_with("land"),
+    names_to = "land",
+    values_to = "land_value") |> 
+  arrange(geo_id)
+    
+head(data_modis_short)
+```
+
+# Hazard magnitude (M)
+
+```{r}
+
+## Compare length between landscan and modis datasets
+# disasterno
+length(unique(data_landscan_short$disasterno))
+length(unique(data_modis_short$disasterno))
+# geo_id
+length(unique(data_landscan_short$geo_id))
+length(unique(data_modis_short$geo_id))
+
+# NOTE: LANDSCAN has less observations than MODIS because we removed years 2001-2002 after computing 3y-trailing moving averages of pop. estimates
+
+## Landscan
+# disasterno in landscan but missing in emdat/gdis
+anti_join(distinct(data_landscan_short, disasterno), 
+          distinct(data_severity, disasterno), 
+          by = "disasterno")
+
+# geo_id in landscan but missing in emdat/gdis
+anti_join(distinct(data_landscan_short, geo_id, disasterno), 
+          distinct(data_severity, geo_id, disasterno), 
+          by = "geo_id")
+# geo_id in emdat/gdis but missing in landscan
+anti_join(distinct(data_severity, geo_id, disasterno), 
+          distinct(data_landscan_short, geo_id, disasterno), 
+          by = "geo_id")
+
+## MODIS
+# disasterno in modis but missing in emdat/gdis
+anti_join(distinct(data_modis_short, disasterno), 
+          distinct(data_severity, disasterno), 
+          by = "disasterno")
+
+# geo_id in modis but missing in emdat/gdis
+anti_join(distinct(data_modis_short, geo_id, disasterno), 
+          distinct(data_severity, geo_id, disasterno), 
+          by = "geo_id")
+# geo_id in emdat/gdis but missing in modis
+anti_join(distinct(data_severity, geo_id, disasterno), 
+          distinct(data_modis_short, geo_id, disasterno), 
+          by = "geo_id")
+
+# TO DO: check why we don't get the same number of distinct observations
+# anti_join(data_severity, data_landscan, by = c("geo_id", "year"))
+# anti_join(data_landscan, data_severity, by = c("geo_id", "year"))
+```
+
+```{r data_exposure}
+
+# merge landscan (population) and modis (landuse)
+data_exposure <- merge(data_landscan_short, data_modis_short, 
+      by = c("geo_id", "disasterno", "year"))
+
+```
+
+```{r data_magnitude}
+
+# merge severity and exposure data
+data_magnitude <- merge(data_exposure, data_severity, 
+      by = c("geo_id", "disasterno", "year")) |> 
+  dplyr::select(geo_id, disasterno, iso3c, year, year_dis, classification_key,
+                starts_with("prec"),
+                starts_with("pop"),
+                starts_with("land"))
+
+data_magnitude |> 
+  group_by(prec) |> 
+  summary(prec_value)
+
+summarize(data_magnitude,
+  min = min(land_value),
+  max = max(land_value),
+  .by = land
+)
+```
+
+```{r distribution_value}
+
+# Precipitation
+data_magnitude |>  
+  filter(year == year_dis) |>
+  mutate(mean = mean(prec_value)) |> 
+  ggplot(aes(x=prec_value)) +
+  geom_density() +
+  geom_vline(aes(xintercept = mean), linetype = "dashed", colour = "blue") +
+  theme_light()
+
+# Population
+data_magnitude |>  
+  filter(year == year_dis) |>
+  mutate(mean = mean(pop_value)) |> 
+  ggplot(aes(x=pop_value)) +
+  geom_density() +
+  geom_vline(aes(xintercept = mean), linetype = "dashed", colour = "blue") +
+  theme_light()
+
+# Land
+data_magnitude |>  
+  filter(year == year_dis) |>
+  mutate(mean = mean(land_value)) |> 
+  ggplot(aes(x=land_value)) +
+  geom_density() +
+  geom_vline(aes(xintercept = mean), linetype = "dashed", colour = "blue") +
+  theme_light()
+```
+
+```{r data_rank}
+
+data_rank <- data_magnitude |>  
+# keep treated years only  
+  filter(year == year_dis) |> 
+# percentile rank severity and exposure vars
+  group_by(prec, pop, land) |>   
+  mutate(rank_prec = percent_rank(prec_value)) |> # severity
+  mutate(rank_pop = percent_rank(pop_value)) |>  # exposure (pop)
+  mutate(rank_land = percent_rank(land_value)) |> # exposure (land)
+  ungroup() |> 
+## create percentile rank dummies
+# exposure
+  mutate(
+    p50_pop_dummy = ifelse(rank_pop >= .5, 1, 0),
+    p4060_pop_dummy = ifelse(rank_pop >= .4 & rank_prec <= .6, 1, 0),
+    p90_pop_dummy = ifelse(rank_pop >= .9, 1, 0),
+    p99_pop_dummy = ifelse(rank_pop >= .99, 1, 0)      
+  ) |> 
+# severity
+  mutate(
+    p50_prec_dummy = ifelse(rank_prec >= .5, 1, 0),
+    p4060_prec_dummy = ifelse(rank_prec >= .4 & rank_prec <= .6, 1, 0),
+    p90_prec_dummy = ifelse(rank_prec >= .9, 1, 0),
+    p99_prec_dummy = ifelse(rank_prec >= .99, 1, 0)
+  )
+```
+
+```{r data_unit}
+
+data_unit <- data_rank |> 
+  expand(iso3c, year)
+```
+
+```{r data_sd2_pop}
+
+data_sd2_pop <- data_rank |> 
+  filter(prec=="sd2") |> # severity index
+  filter(pop=="pop_tma") |> # exposure index
+  dplyr::select(geo_id, iso3c, year, contains("prec_dummy"), contains("pop_dummy")) |> 
+  summarize(
+# exposure
+    D_pop_50 =  ifelse(sum(p50_pop_dummy) > 0, 1, 0),
+    D_pop_4060 = ifelse(sum(p4060_pop_dummy) > 0, 1, 0),
+    D_pop_90 =  ifelse(sum(p90_pop_dummy) > 0, 1, 0),
+    D_pop_99 = ifelse(sum(p99_pop_dummy) > 0, 1, 0),
+# severity
+    D_prec_50 = ifelse(sum(p50_prec_dummy) > 0, 1, 0),
+    D_prec_4060 = ifelse(sum(p4060_prec_dummy) > 0, 1, 0),
+    D_prec_90 = ifelse(sum(p90_prec_dummy) > 0, 1, 0),
+    D_prec_99 = ifelse(sum(p99_prec_dummy) > 0, 1, 0),
+    .by = c("iso3c", "year")) |> 
+  arrange(iso3c, year)
+```
+
+```{r treatment}
+
+treatment <- left_join(data_unit, data_sd2_pop, by = c("iso3c", "year")) |> 
+  mutate(across(starts_with("D_"), \(x) replace_na(x, 0)))
+```
+
+```{r}
+
+save(treatment, file = here("data", "data_magnitude.RData"))
+```
+
+```{r}
+rm(data_emdat, data_exposure, data_gdis, data_landscan, data_modis, key_emdat, GDIS_disasterlocations)
+```

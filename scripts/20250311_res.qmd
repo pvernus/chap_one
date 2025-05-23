@@ -1,0 +1,1906 @@
+---
+title: "Untitled"
+format: html
+editor: visual
+---
+
+```{r, load_pckg}
+
+source(here::here('scripts', 'library.R'))
+```
+
+```{r load_data}
+
+load(here("data", "data_sample.RData"))
+
+```
+
+# Model
+
+# Data
+
+Unit: Country \| Time: Year
+
+```{r data}
+
+data <- data_sample_iso |> 
+  # observation window 2003:2018
+  filter(year %in% c(2003:2018))
+
+## log-transformation
+
+# outcome
+data$log_Y <- log(data$Y + .001)
+
+# pre-treatment characteristics
+data$log_pop_2003 <- log(data$pop_2003)
+data$log_pop_0307 <- log(data$pop_0307)
+
+data$log_gdp_2003 <- log(data$gdp_2003)
+data$log_gdp.pc_2003 <- log(data$gdp.pc_2003)
+
+```
+
+```{r}
+
+## label new variables
+
+labelled::var_label(data) <- list(
+  log_Y = "ODA commitments, constant 2021 USD (log)",
+  log_pop_2003 = "Population in 2003, total (log)",
+  pop_0307 = "Change in population 2003-07, total",
+  log_gdp_2003 = "GDP in 2003, PPP, constant 2021 international USD (log)",
+  gdp_0307 = "Change in GDP 2003-07, PPP, constant 2021 international USD",
+  log_gdp.pc_2003 = "GDP per capita in 2003, PPP, constant 2021 international USD (log)",
+  gdp.pc_0307 = "Change in GDP per capita 2003-07, PPP, constant 2021 international USD",
+  storm_0307	= "Number of storms over the 2003-07 period",
+  drought_0307 = "Number of droughts over the 2003-07 period",
+  region_agg = "Region",
+  inc_gp_03 = "Income group, 2003",
+  inc_gp_07 = "Income group, 2007"
+)
+```
+
+# No Treatment Reversals
+
+## Visualizing Data
+
+```{r}
+
+# Binary staggered 'first' high exposure|severity treatment
+panelview(1 ~ D_H_first,                   
+            main = "Staggered 'first' high exposure|severity treatment",                   
+            by.timing = TRUE,                   
+            collapse.history = TRUE,
+            pre.post = TRUE,
+            data = data,                   
+            index = c("iso3c", "year"))
+
+# binary staggered 'first treatment' treatment status 
+treat.vars.first <- c("D_HeLs_first", "D_HeHs_first", "D_LeHs_first")
+
+panel.bin <- treat.vars.first |>      
+  map(~ panelview(as.formula(paste("1 ~", .x)),                   
+                  main = .x,                   
+                  by.timing = TRUE,                   
+                  collapse.history = TRUE,
+                  pre.post = TRUE,
+                  data = data,                   
+                  index = c("iso3c", "year")))
+
+```
+
+```{r}
+
+# Treatment histories: relative time
+data |> 
+  dplyr::select(iso3c, year, cohort_D_H, D_H_first) |> 
+  mutate(rel_time = ifelse(cohort_D_H != 9999, year - cohort_D_H, NA)) |> 
+  filter(rel_time %in% c(-5:5)) |> 
+  panelview(1 ~ D_H_first,
+            by.timing = TRUE,                   
+            collapse.history = TRUE,
+            pre.post = TRUE,
+            main = "Unique Treatment Histories: D_H_first",
+            index = c("iso3c", "rel_time"))
+
+```
+
+## Goodman-Bacon Decomposition
+
+```{r goodman_bacon_dec}
+
+# requires no missingness in the data 
+data.complete <- data[which(!is.na(data$log_Y)),]  
+# bacon decomposition 
+df_bacon <- bacondecomp::bacon(log_Y~D_H_first,                   
+                               data = data.complete,                   
+                               id_var = "iso3c",                   
+                               time_var = "year") 
+
+df_bacon |> 
+  arrange(desc(weight)) |> 
+  head()
+
+# plot 
+ggplot(df_bacon) +    
+  aes(x = weight, y = estimate, shape = factor(type), color = factor(type)) +    
+  labs(x = "Weight", y = "Estimate", shape = "Type", color = 'Type') +    
+  geom_point() +   
+  labs(title = "D_HeHs_first") +
+  theme_light()  
+
+# relative contribution to the TWFE estimate by cohort 
+print(aggregate(df_bacon$estimate * df_bacon$weight,                  
+                list(df_bacon$type), FUN=sum))  
+
+## NOTE: 
+# forbidden comparisons 
+# (1) “Later vs Always Treated”: ever-treated cohorts and the always-treated 
+# (2) “Later vs Earlier Treated”: ever-treated cohorts switching into treatment with other ever-treated cohorts already treated 
+```
+
+```{r}
+
+# requires no missingness in the data 
+data.complete <- data[which(!is.na(data$log_Y)),]  
+# bacon decomposition 
+df_bacon <- bacondecomp::bacon(log_Y~D_HeHs_first,                   
+                               data = data.complete,                   
+                               id_var = "iso3c",                   
+                               time_var = "year") 
+
+df_bacon |> 
+  arrange(desc(weight)) |> 
+  head()
+
+# plot 
+ggplot(df_bacon) +    
+  aes(x = weight, y = estimate, shape = factor(type), color = factor(type)) +    
+  labs(x = "Weight", y = "Estimate", shape = "Type", color = 'Type') +    
+  geom_point() +   
+  labs(title = "D_HeHs_first") +
+  theme_light()  
+
+# relative contribution to the TWFE estimate by cohort 
+print(aggregate(df_bacon$estimate * df_bacon$weight,                  
+                list(df_bacon$type), FUN=sum))  
+
+## NOTE: 
+# forbidden comparisons 
+# (1) “Later vs Always Treated”: ever-treated cohorts and the always-treated 
+# (2) “Later vs Earlier Treated”: ever-treated cohorts switching into treatment with other ever-treated cohorts already treated 
+```
+
+## Compare TWFE outcome models
+
+```{r feols_baseline}
+
+## Fixed Effects
+
+# Country + Year
+feols_1 <- feols(log_Y~D_H_first | iso3c + year, data=data, cluster = "iso3c")
+
+# Country + Year + Agg.Region ^ Year
+feols_2aa <- feols(log_Y~D_H_first | region_agg^year + iso3c + year, data=data, cluster = "iso3c")
+# Country + Year + Agg.Region ^ Rel.Time_2010
+feols_2ab <- data |> 
+  mutate(rel_time_2010 = year - 2010) |> 
+  feols(log_Y~D_H_first | region_agg^rel_time_2010 + iso3c + year, 
+        cluster = "iso3c")
+
+# Country + Year + Region ^ Year
+feols_2ba <- feols(log_Y~D_H_first | region_code^year + iso3c + year, data=data, cluster = "iso3c")
+# Country + Year + Region ^ Rel.Time_2010
+feols_2bb <- data |> 
+  mutate(rel_time_2010 = year - 2010) |> 
+  feols(log_Y~D_H_first | region_code^rel_time_2010 + iso3c + year, 
+        cluster = "iso3c")
+
+# Country + Year + Region.Agg ^ Year + Country-specific Linear Trends
+feols_3aa <- feols(log_Y~D_H_first | iso3c[t] + region_agg^year + iso3c + year, data=data, cluster = "iso3c")
+# Country + Year + Region.Agg ^ Rel.Time_2010 + Country-specific Linear Trends
+feols_3ab <- data |> 
+  mutate(rel_time_2010 = year - 2010) |> 
+  feols(log_Y~D_H_first | iso3c[t] +  region_agg^rel_time_2010 + iso3c + year, 
+        cluster = "iso3c")
+
+# Country + Year + Region^Year + Country-specific Linear Trends
+feols_3ba <- feols(log_Y~D_H_first | iso3c[t] + region_code^year + iso3c + year, data=data, cluster = "iso3c")
+# Country + Year + Region ^ Rel.Time_2010 + Country-specific Linear Trends
+feols_3bb <- data |> 
+  mutate(rel_time_2010 = year - 2010) |> 
+  feols(log_Y~D_H_first | iso3c[t] +  region_code^rel_time_2010 + iso3c + year, 
+        cluster = "iso3c")
+
+result <- compare_performance(feols_1, 
+                              feols_2aa, feols_2ab,
+                              feols_2ba, feols_2bb,
+                              feols_3aa, feols_3ab, 
+                              feols_3ba, feols_3bb, 
+                              rank = T)
+print_md(result)
+
+## RESULT
+# Baseline mode: 
+# feols(log_Y~D_H_first | iso3c[t] + region_agg^year + iso3c + year, data=data, cluster = "iso3c")
+
+res_baseline <- feols_3aa
+
+```
+
+## TWFE log-OLS Event Study Plot
+
+Sample: 'ever-treated' units only (remove 'never-treated' units)
+
+```{r}
+
+# List of treatment variables
+treat.vars.first <- c("D_H_first", "D_He_first", "D_Hs_first")
+
+# Iterate over each treatment variable
+for (treat_var in treat.vars.first) {
+  # Drop always treated units
+  df.h <- as.data.frame(data |>
+                          group_by(iso3c) |>
+                          mutate(treatment_mean = mean(!!sym(treat_var), na.rm = TRUE)))
+  df.h.feols <- df.h[which(df.h$treatment_mean < 1), ]
+
+# Baseline specification w/ sub-sample (only 'ever-treated' units)
+  formula <- as.formula(paste("log_Y ~", treat_var, "| iso3c[t] + region_agg^year + iso3c + year"))
+  res_ever_H <- feols(formula,
+                      data = df.h.feols,
+                      cluster = "iso3c")
+
+  # Dynamic TWFE
+  es.h.feols <- fect::get.cohort(df.h.feols, D = treat_var,
+                                  index = c("iso3c", "year"))
+
+  # Drop always treated units
+  es.h.feols$treat <- as.numeric(es.h.feols$treatment_mean > 0)
+  es.h.feols[which(is.na(es.h.feols$Time_to_Treatment)), 'Time_to_Treatment'] <- 0 # can be an arbitrary value
+
+  # Fit the model
+  res_es.h.feols <- feols(log_Y ~ i(Time_to_Treatment, treat, ref = -1) |
+                            iso3c[t] + region_agg^year + iso3c + year,
+                          data = es.h.feols,
+                          cluster = "iso3c")
+
+  # Extract coefficients
+  es.h.output <- as.matrix(res_es.h.feols$coeftable)
+
+  # Convert to data frame
+  es.h.output <- as.data.frame(es.h.output)
+
+  # Extract the time values from the row names
+  time_values <- sub("Time_to_Treatment::([-0-9]+):treat", "\\1", rownames(es.h.output))
+  
+  # Convert the extracted values to numeric
+  time_values <- as.numeric(time_values)
+  
+  # Add the new variable 'Time' to the data frame
+  es.h.output$Time <- time_values +1
+
+  # Add number of treated observations for each time period
+  es.h.count <- summarize(es.h.feols,
+                          treated_units = sum(treat),
+                          .by = Time_to_Treatment)
+  es.h.output <- merge(es.h.output, es.h.count, by.x = "Time", by.y = "Time_to_Treatment")
+
+  # Plot the results
+  p.feols.h <- fect::esplot(es.h.output,
+                            Period = 'Time', Estimate = 'Estimate',
+                            Count = "treated_units", show.count = TRUE,
+                            SE = 'Std. Error', xlim = c(-12, 10))
+  
+  print(p.feols.h)
+  
+}
+```
+
+```{r df.feols.h}
+
+# drop always treated units
+df.h <- as.data.frame(data |>  
+                      group_by(iso3c) |> 
+                      mutate(treatment_mean = mean(D_H_first, na.rm = TRUE)))
+df.h.feols <- df.h[which(df.h$treatment_mean<1),]
+
+# Baseline specification w/ sub-sample (only 'ever-treated' units)
+res_ever_H <- feols(log_Y ~ D_H_first | iso3c[t] + region_agg^year + iso3c + year,
+      data=df.h.feols, 
+      cluster = "iso3c")
+
+# Dynamic TWFE
+es.h.feols <- fect::get.cohort(df.h.feols, D = "D_H_first", 
+                               index=c("iso3c","year"))
+
+# drop always treated units
+es.h.feols$treat <- as.numeric(es.h.feols$treatment_mean>0) 
+es.h.feols[which(is.na(es.h.feols$Time_to_Treatment)),'Time_to_Treatment'] <- 0 # can be an arbitrary value
+
+res_es.h.feols <- feols(log_Y ~ i(Time_to_Treatment, treat, ref = -1) | 
+                  iso3c[t] + region_agg^year + iso3c + year, 
+                  data = es.h.feols, 
+                  cluster = "iso3c")
+es.h.output <- as.matrix(res_es.h.feols$coeftable)
+
+## plot
+es.h.output <- as.data.frame(es.h.output)
+
+# add relative time variable
+es.h.output$Time <- c(c(-14:-2), c(0:13))+1
+
+# add number of treated observations for each time period
+es.h.count <- summarize(es.h.feols, 
+                        treated_units = sum(treat), 
+                        .by = Time_to_Treatment)
+es.h.output <- merge(es.h.output, es.h.count, by.x = "Time", by.y = "Time_to_Treatment")
+
+p.feols.h <- fect::esplot(es.h.output,
+                       Period = 'Time', Estimate = 'Estimate', 
+                       Count = "treated_units", show.count = T,
+                       SE = 'Std. Error', xlim = c(-12,10)
+                       )
+p.feols.h
+```
+
+```{r df.feols.he}
+
+# drop always treated units
+df.he <- as.data.frame(data |>  
+                      group_by(iso3c) |> 
+                      mutate(treatment_mean = mean(D_He_first, na.rm = TRUE)))
+df.he.feols <- df.he[which(df.he$treatment_mean<1),]
+
+# Baseline specification w/ sub-sample (only 'ever-treated' units)
+res_ever_He <- feols(log_Y ~ D_He_first | iso3c[t] + region_agg^year + iso3c + year,
+      data=df.he.feols, 
+      cluster = "iso3c")
+
+# Dynamic TWFE
+es.he.feols <- fect::get.cohort(df.he.feols, D = "D_He_first", 
+                               index=c("iso3c","year"))
+
+# drop always treated units
+es.he.feols$treat <- as.numeric(es.he.feols$treatment_mean>0) 
+es.he.feols[which(is.na(es.he.feols$Time_to_Treatment)),'Time_to_Treatment'] <- 0 # can be an arbitrary value
+
+res_es.he.feols <- feols(log_Y ~ i(Time_to_Treatment, treat, ref = -1) | 
+                  iso3c[t] + region_agg^year + iso3c + year, 
+                  data = es.he.feols, 
+                  cluster = "iso3c")
+es.he.output <- as.matrix(res_es.he.feols$coeftable)
+
+## plot
+es.he.output <- as.data.frame(es.he.output)
+
+# add relative time variable
+es.he.output$Time <- c(c(-10:-2), c(0:13))+1
+
+# add number of treated observations for each time period
+es.he.count <- summarize(es.he.feols, 
+                        treated_units = sum(treat), 
+                        .by = Time_to_Treatment)
+es.he.output <- merge(es.he.output, es.he.count, by.x = "Time", by.y = "Time_to_Treatment")
+
+p.feols.he <- fect::esplot(es.he.output,
+                       Period = 'Time', Estimate = 'Estimate', 
+                       Count = "treated_units", show.count = T,
+                       SE = 'Std. Error', xlim = c(-12,10)
+                       )
+p.feols.he
+
+```
+
+```{r df.feols.hs}
+
+# drop always treated units
+df.hs <- as.data.frame(data |>  
+                      group_by(iso3c) |> 
+                      mutate(treatment_mean = mean(D_Hs_first, na.rm = TRUE)))
+df.hs.feols <- df.hs[which(df.hs$treatment_mean<1),]
+
+# Baseline specification w/ sub-sample (only 'ever-treated' units)
+res_ever_Hs <- feols(log_Y ~ D_Hs_first | iso3c[t] + region_agg^year + iso3c + year,
+      data=df.hs.feols, 
+      cluster = "iso3c")
+
+# Dynamic TWFE
+es.hs.feols <- fect::get.cohort(df.hs.feols, D = "D_Hs_first", 
+                               index=c("iso3c","year"))
+
+# drop always treated units
+es.hs.feols$treat <- as.numeric(es.hs.feols$treatment_mean>0) 
+es.hs.feols[which(is.na(es.hs.feols$Time_to_Treatment)),'Time_to_Treatment'] <- 0 # can be an arbitrary value
+
+res_es.hs.feols <- feols(log_Y ~ i(Time_to_Treatment, treat, ref = -1) | 
+                  iso3c[t] + region_agg^year + iso3c + year, 
+                  data = es.hs.feols, 
+                  cluster = "iso3c")
+es.hs.output <- as.matrix(res_es.hs.feols$coeftable)
+
+## plot
+es.hs.output <- as.data.frame(es.hs.output)
+
+# add relative time variable
+es.hs.output$Time <- c(c(-13:-2), c(0:14))+1
+
+# add number of treated observations for each time period
+es.hs.count <- summarize(es.hs.feols, 
+                        treated_units = sum(treat), 
+                        .by = Time_to_Treatment)
+es.hs.output <- merge(es.hs.output, es.hs.count, by.x = "Time", by.y = "Time_to_Treatment")
+
+p.feols.hs <- fect::esplot(es.hs.output,
+                       Period = 'Time', Estimate = 'Estimate', 
+                       Count = "treated_units", show.count = T,
+                       main = "Estimated DTEs: High-severity events",
+                       SE = 'Std. Error', xlim = c(-12,10)
+                       )
+p.feols.hs
+
+```
+
+### Binned TWFE Event Study Plot
+
+```{r}
+
+# List of datasets
+es.feols <- c("es.h.feols", "es.hs.feols", "es.he.feols")
+
+# Iterate over each dataset
+for (dataset in es.feols) {
+  # Create a binary version of the dataset
+  assign(paste0(dataset, ".bin"), get(dataset))
+  bin_dataset <- get(paste0(dataset, ".bin"))
+
+  # Bin Time_to_Treatment
+  bin_dataset$Time_to_Treatment_bin <- bin(bin_dataset$Time_to_Treatment,
+                                           list("< -5" = ~x < -5, "> 5" = ~x > 5))
+
+  # Fit the model
+  res <- feols(log_Y ~ i(Time_to_Treatment_bin, treat, ref = -1) |
+                 iso3c[t] + region_agg^year + iso3c + year,
+               data = bin_dataset,
+               cluster = "iso3c")
+
+  # Extract coefficients
+  output <- as.matrix(res$coeftable)
+  print(round(output, 3))
+
+  # Convert to data frame
+  output <- as.data.frame(output)
+
+  # Add relative time variable
+  output$Time <- c(c(-6:-2), c(0:6)) + 1
+
+  # Add number of treated observations for each time period
+  bin_count <- summarize(bin_dataset,
+                         treated_units = sum(treat),
+                         .by = Time_to_Treatment)
+  output <- merge(output, bin_count,
+                  by.x = "Time", by.y = "Time_to_Treatment")
+
+  # Plot the results
+  p <- fect::esplot(output,
+                    Period = 'Time', Estimate = 'Estimate',
+                    SE = 'Std. Error', xlim = c(-6,6),
+                    main = paste("Estimated Binned DTEs:", dataset))
+
+  print(p)
+}
+
+```
+
+## Heterogeneity
+
+### Disaster magnitude
+
+```{r twfe.hehs.est}
+
+# drop always treated units
+df <- as.data.frame(data |>  
+                      group_by(iso3c) |> 
+                      mutate(treatment_mean = mean(D_HeHs_first, na.rm = TRUE)))
+df.twfe <- df[which(df$treatment_mean<1),]
+
+df.twfe <- fect::get.cohort(df.twfe, D = "D_HeHs_first", index=c("iso3c","year"))
+
+# Dynamic TWFE
+df.twfe <- df.twfe
+# drop always treated units
+df.twfe$treat <- as.numeric(df.twfe$treatment_mean>0) 
+df.twfe[which(is.na(df.twfe$Time_to_Treatment)),'Time_to_Treatment'] <- 0 # can be an arbitrary value
+
+twfe.hehs.est <- feols(log_Y ~ i(Time_to_Treatment, treat, ref = -1) | 
+                  iso3c[t] + region_agg^year + iso3c + year, 
+                  data = df.twfe, 
+                  cluster = "iso3c")
+
+```
+
+```{r twfe.hels.est}
+
+# drop always treated units
+df <- as.data.frame(data |>  
+                      group_by(iso3c) |> 
+                      mutate(treatment_mean = mean(D_HeLs_first, na.rm = TRUE)))
+df.twfe <- df[which(df$treatment_mean<1),]
+
+df.twfe <- fect::get.cohort(df.twfe, D = "D_HeLs_first", index=c("iso3c","year"))
+
+# Dynamic TWFE
+df.twfe <- df.twfe
+# drop always treated units
+df.twfe$treat <- as.numeric(df.twfe$treatment_mean>0) 
+df.twfe[which(is.na(df.twfe$Time_to_Treatment)),'Time_to_Treatment'] <- 0 # can be an arbitrary value
+
+twfe.hels.est <- feols(log_Y ~ i(Time_to_Treatment, treat, ref = -1) | 
+                  iso3c[t] + region_agg^year + iso3c + year, 
+                  data = df.twfe, 
+                  cluster = "iso3c")
+
+```
+
+```{r twfe.lehs.est}
+
+# drop always treated units
+df <- as.data.frame(data |>  
+                      group_by(iso3c) |> 
+                      mutate(treatment_mean = mean(D_LeHs_first, na.rm = TRUE)))
+df.twfe <- df[which(df$treatment_mean<1),]
+
+df.twfe <- fect::get.cohort(df.twfe, D = "D_LeHs_first", index=c("iso3c","year"))
+
+# Dynamic TWFE
+df.twfe <- df.twfe
+# drop always treated units
+df.twfe$treat <- as.numeric(df.twfe$treatment_mean>0) 
+df.twfe[which(is.na(df.twfe$Time_to_Treatment)),'Time_to_Treatment'] <- 0 # can be an arbitrary value
+
+twfe.lehs.est <- feols(log_Y ~ i(Time_to_Treatment, treat, ref = -1) | 
+                  iso3c[t] + region_agg^year + iso3c + year, 
+                  data = df.twfe, 
+                  cluster = "iso3c")
+
+```
+
+```{r twfe.hels.est}
+
+# drop always treated units
+df <- as.data.frame(data |>  
+                      group_by(iso3c) |> 
+                      mutate(treatment_mean = mean(D_HeLs_first, na.rm = TRUE)))
+df.twfe <- df[which(df$treatment_mean<1),]
+
+df.twfe <- fect::get.cohort(df.twfe, D = "D_HeLs_first", index=c("iso3c","year"))
+
+# Dynamic TWFE
+df.twfe <- df.twfe
+# drop always treated units
+df.twfe$treat <- as.numeric(df.twfe$treatment_mean>0) 
+df.twfe[which(is.na(df.twfe$Time_to_Treatment)),'Time_to_Treatment'] <- 0 # can be an arbitrary value
+
+twfe.hels.est <- feols(log_Y ~ i(Time_to_Treatment, treat, ref = -1) | 
+                  iso3c[t] + region_agg^year + iso3c + year, 
+                  data = df.twfe, 
+                  cluster = "iso3c")
+```
+
+```{r}
+
+iplot(twfe.h.est, col = "grey", x.shift = -.2, main = "TWFE ('ever-treated' sub-sample (D_HeLs_first)")
+iplot(twfe.hehs.est, add = T, col = "#2A5A5B", x.shift = -.1)
+iplot(twfe.hels.est, add = T, col = "#73AE80", x.shift = 0)
+iplot(twfe.lehs.est, add = T, col = "#6C83B5", x.shift = .1)
+
+```
+
+## Imputation Method
+
+Sample: include 'never-treated' units
+
+```{r p.fect}
+
+df$reg_year <- paste0(df$region_agg, "_", df$year)
+out.fect <- fect(log_Y ~ D_H_first, data = df, 
+                 index = c("iso3c","year"),
+                 method = "cfe", force = "two-way", 
+                 se = TRUE, parallel = TRUE, nboots = 200,
+                 sfe = c("reg_year"),
+                 cfe = list(c("iso3c","t"))
+     )
+
+print(out.fect$est.avg)
+
+fect.output <- as.matrix(out.fect$est.att)
+head(fect.output)
+
+fect.output <- as.data.frame(fect.output)
+fect.output$Time <- c(-13:14)
+p.fect <- esplot(fect.output, main = "Imputation method (D_H_first)",
+                 Period = 'Time', Estimate = 'ATT',
+                 SE = 'S.E.', CI.lower = "CI.lower", CI.upper = 'CI.upper',
+                 xlim = c(-13,14))
+p.fect
+```
+
+### Balanced treated sample
+
+```{r p.fect.balance}
+
+out.fect.balance <- fect(log_Y ~ D_H_first, data = df, 
+                 index = c("iso3c","year"),
+                 method = "cfe", force = "two-way", 
+                 se = TRUE, parallel = TRUE, nboots = 200,
+                 sfe = c("reg_year"),
+                 cfe = list(c("iso3c","t")),
+                 balance.period = c(-4,5)
+     )
+
+# att
+print(out.fect.balance$est.balance.avg)
+
+# event study plot
+fect.balance.output <- as.data.frame(out.fect.balance$est.balance.att)
+fect.balance.output$Time <- c(-4:5)
+p.fect.balance <- esplot(fect.balance.output, main = "Imputation method, balanced treated sample (D_H_first)",
+                         Period = 'Time', Estimate = 'ATT', 
+                         SE = 'S.E.', CI.lower = "CI.lower", CI.upper = 'CI.upper')
+p.fect.balance
+```
+
+## LP-DID
+
+```{r}
+
+# D_H_first
+lpdid <- lpdid(data, window = c(-9, 10),
+               y = "log_Y", treat_status = "D_H_first",
+               unit_index = "iso3c", time_index = "year",
+               cluster	= "iso3c")
+
+lpdid_1 <- lpdid(data, window = c(-9, 10),
+               y = "log_Y", treat_status = "D_H_first",
+               unit_index = "iso3c", time_index = "year",
+               controls = ~ 1 | region_agg^year,
+               reweight = TRUE,
+               cluster	= "iso3c")
+
+lpdid_2 <- lpdid(data, window = c(-9, 10),
+               y = "log_Y", treat_status = "D_H_first",
+               unit_index = "iso3c", time_index = "year",
+               controls = ~ log_pop_2003 + log_gdp.pc_2003,
+               reweight = TRUE,
+               cluster	= "iso3c")
+
+lpdid_3 <- lpdid(data, window = c(-9, 10),
+               y = "log_Y", treat_status = "D_H_first",
+               unit_index = "iso3c", time_index = "year",
+               controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+               reweight = TRUE,
+               cluster	= "iso3c")
+
+plot_lpdid(lpdid, col = "grey", x.shift = 0, ylim = c(-2,2), main = "LP-DID: Compare outcome models (D_H_First)")
+plot_lpdid(lpdid_1, add = T, col = "tomato", x.shift = .1)
+plot_lpdid(lpdid_2, add = T, col = "orange", x.shift = .2)
+plot_lpdid(lpdid_3, add = T, col = "brown3", x.shift = .3)
+
+abline(h = mean(c(15, 15, 35)), lty = 2)
+legend("bottomleft", legend = c("Baseline", "Baseline + Reg^Year FEs", "Baseline + Controls", "Baseline + Controls + Reg^Year FEs"), bty = "n",
+       col = c("grey", "tomato", "orange", "brown3"), 
+       pch = 19, cex = .8, ncol = 2
+       )
+
+```
+
+```{r}
+
+# D_HeHs_first
+lpdid <- lpdid(data, window = c(-9, 10),
+               y = "log_Y", treat_status = "D_HeHs_first",
+               unit_index = "iso3c", time_index = "year",
+               cluster	= "iso3c")
+
+lpdid_1 <- lpdid(data, window = c(-9, 10),
+               y = "log_Y", treat_status = "D_HeHs_first",
+               unit_index = "iso3c", time_index = "year",
+               controls = ~ 1 | region_agg^year,
+               reweight = TRUE,
+               cluster	= "iso3c")
+
+lpdid_2 <- lpdid(data, window = c(-9, 10),
+               y = "log_Y", treat_status = "D_HeHs_first",
+               unit_index = "iso3c", time_index = "year",
+               controls = ~ log_pop_2003 + log_gdp.pc_2003,
+               reweight = TRUE,
+               cluster	= "iso3c")
+
+lpdid_3 <- lpdid(data, window = c(-9, 10),
+               y = "log_Y", treat_status = "D_HeHs_first",
+               unit_index = "iso3c", time_index = "year",
+               controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+               reweight = TRUE,
+               cluster	= "iso3c")
+
+plot_lpdid(lpdid, col = "grey", x.shift = 0, ylim = c(-2,2), main = "LP-DID: Compare outcome models (D_HeHs_First)")
+plot_lpdid(lpdid_1, add = T, col = "tomato", x.shift = .1)
+plot_lpdid(lpdid_2, add = T, col = "orange", x.shift = .2)
+plot_lpdid(lpdid_3, add = T, col = "brown3", x.shift = .3)
+
+abline(h = mean(c(15, 15, 35)), lty = 2)
+legend("bottomleft", legend = c("Baseline", "Baseline + Reg^Year FEs", "Baseline + Controls", "Baseline + Controls + Reg^Year FEs"), bty = "n",
+       col = c("grey", "tomato", "orange", "brown3"), 
+       pch = 19, cex = .8, ncol = 2
+       )
+
+```
+
+## Heterogeneity
+
+### Disaster magnitude
+
+```{r}
+
+# D_H_first
+lpdid.h <- lpdid(df, window = c(-9, 10),
+               y = "log_Y", treat_status = "D_H_first",
+               unit_index = "iso3c", time_index = "year",
+               controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+               reweight = TRUE,
+               cluster	= "iso3c")
+
+# D_HeHs_first
+lpdid.hehs <- lpdid(df, window = c(-9, 10),
+               y = "log_Y", treat_status = "D_HeHs_first",
+               unit_index = "iso3c", time_index = "year",
+               controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+               reweight = TRUE,
+               cluster	= "iso3c")
+
+# D_HeLs_first
+lpdid.hels <- lpdid(df, window = c(-9, 10),
+               y = "log_Y", treat_status = "D_HeLs_first",
+               unit_index = "iso3c", time_index = "year",
+               controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+               reweight = TRUE,
+               cluster	= "iso3c")
+
+# D_LeHs_first
+lpdid.lehs <- lpdid(df, window = c(-9, 10),
+               y = "log_Y", treat_status = "D_LeHs_first",
+               unit_index = "iso3c", time_index = "year",
+               controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+               reweight = TRUE,
+               cluster	= "iso3c")
+
+par(mar = c(8.1, 4.1, 4.1, 4.1))
+
+plot_lpdid(lpdid.h, col = "grey", x.shift = -.2, ylim = c(-2,2), main = "LP-DID (No Treatment reversals)")
+plot_lpdid(lpdid.hels, add = TRUE, col = "#73AE80", x.shift = -.1)
+plot_lpdid(lpdid.lehs, add = TRUE, col = "#6C83B5", x.shift = 0)
+plot_lpdid(lpdid.hehs, add = TRUE, col = "#2A5A5B", x.shift = 1)
+
+abline(h = mean(c(15, 15, 35)), lty = 2)
+legend("bottomleft", legend = c("H", "HeLs", "LeHs", "HeHs"), bty = "n",
+       col = c("grey", "#73AE80", "#6C83B5", "#2A5A5B"), 
+       pch = 19, cex = .8, ncol = 2
+       )
+
+```
+
+### ODA category
+
+```{r}
+
+# sample
+data_cat <- data_sample_iso_cat |> 
+  mutate(
+    cat = case_when(
+      category == "Development" ~ "dev",
+      category == "Gov. & Peace" ~ "gov",
+      category == "Budgetary" ~ "budg",
+      category == "Humanitarian" ~ "hum"
+    ),
+    iso_cat = paste0(iso3c, "_", cat)) |> 
+  relocate(iso_cat, .after = category)
+
+# Constructs a fixest panel data base
+# data_cat = panel(data_cat, ~iso_cat+year)
+
+## log-transformation
+# outcome
+data_cat$log_Y <- log(data_cat$Y + .001)
+# covariates
+data_cat$log_pop_2003 <- log(data_cat$pop_2003)
+data_cat$log_gdp_2003 <- log(data_cat$gdp_2003)
+data_cat$log_gdp.pc_2003 <- log(data_cat$gdp.pc_2003)
+
+```
+
+```{r}
+
+categories <- c("Humanitarian", "Gov. & Peace", "Development", "Budgetary")
+
+map(categories, \(x) {
+  
+  res.H <- lpdid(df = data_cat[data_cat$category==x, ], window = c(-9, 10),
+               y = "log_Y", treat_status = "D_H_first",
+               unit_index = "iso3c", time_index = "year",
+#               controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+               reweight = TRUE,
+               cluster	= "iso3c")
+  
+  res.HeHs <- lpdid(df = data_cat[data_cat$category==x, ], window = c(-9, 10),
+               y = "log_Y", treat_status = "D_HeHs_first",
+               unit_index = "iso3c", time_index = "year",
+#               controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+               reweight = TRUE,
+               cluster	= "iso3c")
+               
+  res.HeLs <- lpdid(df = data_cat[data_cat$category==x, ], window = c(-9, 10),
+               y = "log_Y", treat_status = "D_HeLs_first",
+               unit_index = "iso3c", time_index = "year",
+#               controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+               reweight = TRUE,
+               cluster	= "iso3c")  
+  
+  res.LeHs <- lpdid(df = data_cat[data_cat$category==x, ], window = c(-9, 10),
+               y = "log_Y", treat_status = "D_LeHs_first",
+               unit_index = "iso3c", time_index = "year",
+#               controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+               reweight = TRUE,
+               cluster	= "iso3c")
+    
+  plot_lpdid(res.H, x.shift = -.2, col = "grey", main = x, ylim = c(-4,4))
+  plot_lpdid(res.HeLs, add = TRUE, col = "#73AE80", x.shift = -.1)  
+  plot_lpdid(res.LeHs, add = TRUE, col = "#6C83B5", x.shift = 0)  
+  plot_lpdid(res.HeHs, add = TRUE, col = "#2A5A5B", x.shift = .1)
+  
+  abline(h = mean(c(15, 15, 35)), lty = 2)
+  legend("bottomleft", legend = c("H", "HeLs", "LeHs", "HeHs"), bty = "n",
+       col = c("grey", "#73AE80", "#6C83B5", "#2A5A5B"), 
+       pch = 19, cex = .8, ncol = 2
+       )
+  
+})
+
+```
+
+# With Treatment Reversals
+
+## Visualizing Data
+
+```{r}
+
+# Binary staggered 'first' high exposure|severity treatment
+panelview(1 ~ D_H,                   
+            main = "D_H",                   
+            by.timing = TRUE,                   
+            collapse.history = TRUE,
+            pre.post = TRUE,
+            data = data,                   
+            index = c("iso3c", "year"))
+
+# binary staggered 'first treatment' treatment status 
+treat.vars.first <- c("D_HeLs", "D_LeHs", "D_HeHs") 
+
+panel.bin <- treat.vars.first |>      
+  map(~ panelview(as.formula(paste("1 ~", .x)),                   
+                  main = .x,                   
+                  by.timing = TRUE,                   
+                  collapse.history = TRUE,
+                  pre.post = TRUE,
+                  data = data,                   
+                  index = c("iso3c", "year")))
+
+```
+
+## Compare TWFE outcome models
+
+```{r}
+
+## Fixed Effects
+
+# Country + Year
+feols_1 <- feols(log_Y~D_H | iso3c + year, data=data, cluster = "iso3c")
+
+# Country + Year + Agg.Region ^ Year
+feols_2aa <- feols(log_Y~D_H | region_agg^year + iso3c + year, data=data, cluster = "iso3c")
+# Country + Year + Agg.Region ^ Rel.Time_2010
+feols_2ab <- data |> 
+  mutate(rel_time_2010 = year - 2010) |> 
+  feols(log_Y~D_H | region_agg^rel_time_2010 + iso3c + year, 
+        cluster = "iso3c")
+
+# Country + Year + Region ^ Year
+feols_2ba <- feols(log_Y~D_H | region_code^year + iso3c + year, data=data, cluster = "iso3c")
+# Country + Year + Region ^ Rel.Time_2010
+feols_2bb <- data |> 
+  mutate(rel_time_2010 = year - 2010) |> 
+  feols(log_Y~D_H | region_code^rel_time_2010 + iso3c + year, 
+        cluster = "iso3c")
+
+# Country + Year + Region.Agg ^ Year + Country-specific Linear Trends
+feols_3aa <- feols(log_Y~D_H | iso3c[t] + region_agg^year + iso3c + year, data=data, cluster = "iso3c")
+# Country + Year + Region.Agg ^ Rel.Time_2010 + Country-specific Linear Trends
+feols_3ab <- data |> 
+  mutate(rel_time_2010 = year - 2010) |> 
+  feols(log_Y~D_H | iso3c[t] +  region_agg^rel_time_2010 + iso3c + year, 
+        cluster = "iso3c")
+
+# Country + Year + Region^Year + Country-specific Linear Trends
+feols_3ba <- feols(log_Y~D_H | iso3c[t] + region_code^year + iso3c + year, data=data, cluster = "iso3c")
+# Country + Year + Region ^ Rel.Time_2010 + Country-specific Linear Trends
+feols_3bb <- data |> 
+  mutate(rel_time_2010 = year - 2010) |> 
+  feols(log_Y~D_H | iso3c[t] +  region_code^rel_time_2010 + iso3c + year, 
+        cluster = "iso3c")
+
+result <- compare_performance(feols_1, 
+                              feols_2aa, feols_2ab,
+                              feols_2ba, feols_2bb,
+                              feols_3aa, feols_3ab, 
+                              feols_3ba, feols_3bb, 
+                              rank = T)
+print_md(result)
+
+## RESULT
+# Baseline mode: 
+# feols(log_Y~D_H | iso3c[t] + region_agg^year + iso3c + year, data=data, cluster = "iso3c")
+
+res_baseline <- feols_3aa
+```
+
+## Carryover Effects Test
+
+We use imputation method to visualize the period-wise ATT relative to the exit of the treatment in order to test for carryover effects, i.e., when past treatments affect current outcomes.
+
+```{r}
+
+out.fect <- fect(log_Y ~ D_H, data = df, 
+                 index = c("iso3c","year"),
+                 method = "cfe", force = "two-way", 
+                 se = TRUE, parallel = TRUE, nboots = 200,
+                 sfe = c("reg_year"),
+                 cfe = list(c("iso3c","t"))
+     )
+
+plot(p.fect, type = 'exit')
+
+```
+
+```{r}
+
+# D_H
+df$reg_year <- paste0(df$region_agg, "_", df$year)
+out.fect.c <- fect(log_Y ~ D_H, data = df, 
+                 index = c("iso3c","year"),
+                 method = "cfe", force = "two-way", 
+                 se = TRUE, parallel = TRUE, nboots = 200,
+                 sfe = c("reg_year"),
+                 cfe = list(c("iso3c","t")),
+                 carryoverTest = TRUE, carryover.period = c(1,2))
+# plot
+plot(out.fect.c,  stats = "carryover.p")
+
+## D_HeHs
+out.fect.c <- fect(log_Y ~ D_HeHs, data = df, 
+                 index = c("iso3c","year"),
+                 method = "cfe", force = "two-way", 
+                 se = TRUE, parallel = TRUE, nboots = 200,
+                 sfe = c("reg_year"),
+                 cfe = list(c("iso3c","t")),
+                 carryoverTest = TRUE, carryover.period = c(1,2))
+# plot
+plot(out.fect.c,  stats = "carryover.p")
+
+```
+
+## LP-DID
+
+TWFE and Imputation methods estimate the contemporaneous effect and the step response, which is the cumulative effect of a permanent shift in treatment status on some future outcome. They don't allow for carryover effects.
+
+In our context, we are interested instead in the the j-step lagged effect (also called the impulse response) which is the marginal effect of treatment in time t − n on the outcome in time t.
+
+The LP-DID approach is well suited to estimate such j-step lagged effects. It also allows for treatment reversals.
+
+### Compare w/o Treatment Reversals vs. w/ Treatment Reversals
+
+```{r}
+
+lpdid <- lpdid(data, window = c(-5, 9),
+               y = "log_Y", treat_status = "D_H_first",
+               unit_index = "iso3c", time_index = "year",
+               controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+               reweight = TRUE,
+               cluster	= "iso3c")
+
+lpdid_nab_1 <- lpdid(data, window = c(-5, 9), 
+                y = "log_Y", treat_status = "D_H",
+                unit_index = "iso3c", time_index = "year",
+                controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+                nonabsorbing_lag = 1,
+                reweight = TRUE,
+                cluster	= "iso3c")
+
+lpdid_nab_3 <- lpdid(data, window = c(-5, 9), 
+                y = "log_Y", treat_status = "D_H",
+                unit_index = "iso3c", time_index = "year",
+                controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+                nonabsorbing_lag = 3,
+                reweight = TRUE,
+                cluster	= "iso3c")
+
+lpdid_nab_5 <- lpdid(data, window = c(-5, 9), 
+                y = "log_Y", treat_status = "D_H",
+                unit_index = "iso3c", time_index = "year",
+                controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+                nonabsorbing_lag = 5,
+                reweight = TRUE,
+                cluster	= "iso3c")
+
+par(mar = c(4.1, 4.1, 4.1, 4.1))
+
+plot_lpdid(main = "D_H_first (absorbing) vs. D_H (non-absorbing)",
+           lpdid, col = "grey", x.shift = -.2, ylim = c(-2,2))
+plot_lpdid(lpdid_nab_1, add = T, col = "sandybrown", x.shift = -.1)
+plot_lpdid(lpdid_nab_3, add = T, col = "orange", x.shift = 0)
+plot_lpdid(lpdid_nab_5, add = T, col = "tomato", x.shift = .1)
+
+abline(h = mean(c(15, 15, 35)), lty = 2)
+legend("bottomleft", legend = c("Absorbing", "Non-abs. (K=1)", "Non-abs. (K=3)", "Non-abs. (K=5)"), bty = "n",
+       col = c("grey", "sandybrown", "orange", "tomato"), 
+       pch = 19, cex = .8, ncol = 2
+       )
+
+```
+
+```{r}
+
+lpdid <- lpdid(data, window = c(-5, 9),
+               y = "log_Y", treat_status = "D_HeHs_first",
+               unit_index = "iso3c", time_index = "year",
+               controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+               reweight = TRUE,
+               cluster	= "iso3c")
+
+lpdid_nab_1 <- lpdid(data, window = c(-5, 9), 
+                y = "log_Y", treat_status = "D_HeHs",
+                unit_index = "iso3c", time_index = "year",
+                controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+                nonabsorbing_lag = 1,
+                reweight = TRUE,
+                cluster	= "iso3c")
+
+lpdid_nab_3 <- lpdid(data, window = c(-5, 9), 
+                y = "log_Y", treat_status = "D_HeHs",
+                unit_index = "iso3c", time_index = "year",
+                controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+                nonabsorbing_lag = 3,
+                reweight = TRUE,
+                cluster	= "iso3c")
+
+lpdid_nab_5 <- lpdid(data, window = c(-5, 9), 
+                y = "log_Y", treat_status = "D_HeHs",
+                unit_index = "iso3c", time_index = "year",
+                controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+                nonabsorbing_lag = 5,
+                reweight = TRUE,
+                cluster	= "iso3c")
+
+par(mar = c(4.1, 4.1, 4.1, 4.1))
+
+plot_lpdid(main = "D_HeHs_first (absorbing) vs. D_HeHs (non-absorbing)",
+           lpdid, col = "grey", x.shift = -.2, ylim = c(-2,2))
+plot_lpdid(lpdid_nab_1, add = T, col = "sandybrown", x.shift = -.1)
+plot_lpdid(lpdid_nab_3, add = T, col = "orange", x.shift = 0)
+plot_lpdid(lpdid_nab_5, add = T, col = "tomato", x.shift = .1)
+
+abline(h = mean(c(15, 15, 35)), lty = 2)
+legend("bottomleft", legend = c("Absorbing", "Non-abs. (K=1)", "Non-abs. (K=3)", "Non-abs. (K=5)"), bty = "n",
+       col = c("grey", "sandybrown", "orange", "tomato"), 
+       pch = 19, cex = .8, ncol = 2
+       )
+
+```
+
+## Heterogeneity
+
+### Disaster magnitude
+
+```{r}
+
+# D_H
+lpdid.h <- lpdid(data, window = c(-5, 5), 
+                y = "log_Y", treat_status = "D_H",
+                unit_index = "iso3c", time_index = "year",
+                controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+                nonabsorbing_lag = 1,
+                cluster	= "iso3c")
+
+# D_HeHs
+lpdid.hehs <- lpdid(data, window = c(-5, 5), 
+                y = "log_Y", treat_status = "D_HeHs",
+                unit_index = "iso3c", time_index = "year",
+                controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+                nonabsorbing_lag = 1,
+                cluster	= "iso3c")
+
+# D_HeLs
+lpdid.hels <- lpdid(data, window = c(-5, 5), 
+                y = "log_Y", treat_status = "D_HeLs",
+                unit_index = "iso3c", time_index = "year",
+                controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+                nonabsorbing_lag = 1,
+                cluster	= "iso3c")
+
+# D_LeHs
+lpdid.lehs <- lpdid(data, window = c(-5, 5), 
+                y = "log_Y", treat_status = "D_LeHs",
+                unit_index = "iso3c", time_index = "year",
+                controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+                nonabsorbing_lag = 1,
+                cluster	= "iso3c")
+
+par(mar = c(4.1, 4.1, 4.1, 4.1))
+
+plot_lpdid(main = "All ODA (K=1)",
+           lpdid.h, col = "grey", x.shift = -.2, ylim = c(-2,2))
+plot_lpdid(lpdid.hels, add = TRUE, col = "#73AE80", x.shift = -.1)
+plot_lpdid(lpdid.lehs, add = TRUE, col = "#6C83B5", x.shift = 0)
+plot_lpdid(lpdid.hehs, add = TRUE, col = "#2A5A5B", x.shift = .1)
+
+abline(h = mean(c(15, 15, 35)), lty = 2)
+legend("bottomleft", legend = c("H", "HeLs", "LeHs", "HeHs"), bty = "n",
+       col = c("grey", "#73AE80", "#6C83B5", "#2A5A5B"), 
+       pch = 19, cex = .8, ncol = 2
+       )
+
+```
+
+### ODA category
+
+```{r}
+
+# sample
+data_cat <- data_sample_iso_cat |> 
+  mutate(
+    cat = case_when(
+      category == "Development" ~ "dev",
+      category == "Gov. & Peace" ~ "gov",
+      category == "Budgetary" ~ "budg",
+      category == "Humanitarian" ~ "hum"
+    ),
+    iso_cat = paste0(iso3c, "_", cat)) |> 
+  relocate(iso_cat, .after = category)
+
+# Constructs a fixest panel data base
+# data_cat = panel(data_cat, ~iso_cat+year)
+
+## log-transformation
+# outcome
+data_cat$log_Y <- log(data_cat$Y + .001)
+# covariates
+data_cat$log_pop_2003 <- log(data_cat$pop_2003)
+data_cat$log_gdp_2003 <- log(data_cat$gdp_2003)
+data_cat$log_gdp.pc_2003 <- log(data_cat$gdp.pc_2003)
+
+```
+
+**Humanitarian**
+
+```{r}
+
+# D_H
+lpdid.h <- lpdid(df = data_cat[data_cat$category=="Humanitarian", ], 
+                 window = c(-5, 9), 
+                y = "log_Y", treat_status = "D_H",
+                unit_index = "iso3c", time_index = "year",
+                controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+                nonabsorbing_lag = 1,
+                cluster	= "iso3c")
+
+# D_HeHs
+lpdid.hehs <- lpdid(df = data_cat[data_cat$category=="Humanitarian", ], 
+                    window = c(-5, 9), 
+                y = "log_Y", treat_status = "D_HeHs",
+                unit_index = "iso3c", time_index = "year",
+                controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+                nonabsorbing_lag = 1,
+                cluster	= "iso3c")
+
+# D_HeLs
+lpdid.hels <- lpdid(df = data_cat[data_cat$category=="Humanitarian", ], 
+                    window = c(-5, 9), 
+                y = "log_Y", treat_status = "D_HeLs",
+                unit_index = "iso3c", time_index = "year",
+                controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+                nonabsorbing_lag = 1,
+                cluster	= "iso3c")
+
+# D_LeHs
+lpdid.lehs <- lpdid(df = data_cat[data_cat$category=="Humanitarian", ], 
+                    window = c(-5, 8), 
+                y = "log_Y", treat_status = "D_LeHs",
+                unit_index = "iso3c", time_index = "year",
+                controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+                nonabsorbing_lag = 1,
+                cluster	= "iso3c")
+
+par(mar = c(4.1, 4.1, 4.1, 4.1))
+
+plot_lpdid(main = "Humanitarian (K=1)",
+           lpdid.h, col = "grey", x.shift = -.2, ylim = c(-3,4.5))
+plot_lpdid(lpdid.hels, add = TRUE, col = "#73AE80", x.shift = -.1)
+plot_lpdid(lpdid.lehs, add = TRUE, col = "#6C83B5", x.shift = 0)
+plot_lpdid(lpdid.hehs, add = TRUE, col = "#2A5A5B", x.shift = .1)
+
+abline(h = mean(c(15, 15, 35)), lty = 2)
+legend("bottom", legend = c("H", "HeLs", "LeHs", "HeHs"), bty = "n",
+       col = c("grey", "#73AE80", "#6C83B5", "#2A5A5B"), 
+       pch = 19, cex = .8, ncol = 2
+       )
+
+```
+
+```{r}
+
+# D_H
+lpdid.h <- lpdid(df = data_cat[data_cat$category=="Humanitarian", ], 
+                 window = c(-5, 9), 
+                y = "log_Y", treat_status = "D_H",
+                unit_index = "iso3c", time_index = "year",
+                controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+                nonabsorbing_lag = 5,
+                cluster	= "iso3c")
+
+# D_HeHs
+lpdid.hehs <- lpdid(df = data_cat[data_cat$category=="Humanitarian", ], 
+                    window = c(-5, 9), 
+                y = "log_Y", treat_status = "D_HeHs",
+                unit_index = "iso3c", time_index = "year",
+                controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+                nonabsorbing_lag = 5,
+                cluster	= "iso3c")
+
+# D_HeLs
+lpdid.hels <- lpdid(df = data_cat[data_cat$category=="Humanitarian", ], 
+                    window = c(-5, 9), 
+                y = "log_Y", treat_status = "D_HeLs",
+                unit_index = "iso3c", time_index = "year",
+                controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+                nonabsorbing_lag = 5,
+                cluster	= "iso3c")
+
+# D_LeHs
+lpdid.lehs <- lpdid(df = data_cat[data_cat$category=="Humanitarian", ], 
+                    window = c(-5, 9), 
+                y = "log_Y", treat_status = "D_LeHs",
+                unit_index = "iso3c", time_index = "year",
+                controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+                nonabsorbing_lag = 5,
+                cluster	= "iso3c")
+
+par(mar = c(4.1, 4.1, 4.1, 4.1))
+
+plot_lpdid(main = "Humanitarian (K=5)",
+           lpdid.h, col = "grey", x.shift = -.2, ylim = c(-3,4.5))
+plot_lpdid(lpdid.hels, add = TRUE, col = "#73AE80", x.shift = -.1)
+plot_lpdid(lpdid.lehs, add = TRUE, col = "#6C83B5", x.shift = 0)
+plot_lpdid(lpdid.hehs, add = TRUE, col = "#2A5A5B", x.shift = .1)
+
+abline(h = mean(c(15, 15, 35)), lty = 2)
+legend("bottom", legend = c("H", "HeLs", "LeHs", "HeHs"), bty = "n",
+       col = c("grey", "#73AE80", "#6C83B5", "#2A5A5B"), 
+       pch = 19, cex = .8, ncol = 2
+       )
+
+```
+
+**Government & Peace**
+
+```{r}
+
+# D_H
+lpdid.h <- lpdid(df = data_cat[data_cat$category=="Gov. & Peace", ], 
+                 window = c(-5, 9), 
+                y = "log_Y", treat_status = "D_H",
+                unit_index = "iso3c", time_index = "year",
+                controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+                nonabsorbing_lag = 1,
+                cluster	= "iso3c")
+
+# D_HeHs
+lpdid.hehs <- lpdid(df = data_cat[data_cat$category=="Gov. & Peace", ], 
+                    window = c(-5, 9), 
+                y = "log_Y", treat_status = "D_HeHs",
+                unit_index = "iso3c", time_index = "year",
+                controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+                nonabsorbing_lag = 1,
+                cluster	= "iso3c")
+
+# D_HeLs
+lpdid.hels <- lpdid(df = data_cat[data_cat$category=="Gov. & Peace", ], 
+                    window = c(-5, 9), 
+                y = "log_Y", treat_status = "D_HeLs",
+                unit_index = "iso3c", time_index = "year",
+                controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+                nonabsorbing_lag = 1,
+                cluster	= "iso3c")
+
+# D_LeHs
+lpdid.lehs <- lpdid(df = data_cat[data_cat$category=="Gov. & Peace", ], 
+                    window = c(-5, 9), 
+                y = "log_Y", treat_status = "D_LeHs",
+                unit_index = "iso3c", time_index = "year",
+                controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+                nonabsorbing_lag = 1,
+                cluster	= "iso3c")
+
+par(mar = c(4.1, 4.1, 4.1, 4.1))
+
+plot_lpdid(main = "Gov. & Peace (K=1)",
+           lpdid.h, col = "grey", x.shift = -.2, ylim = c(-3,2))
+plot_lpdid(lpdid.hels, add = TRUE, col = "#73AE80", x.shift = -.1)
+plot_lpdid(lpdid.lehs, add = TRUE, col = "#6C83B5", x.shift = 0)
+plot_lpdid(lpdid.hehs, add = TRUE, col = "#2A5A5B", x.shift = .1)
+
+abline(h = mean(c(15, 15, 35)), lty = 2)
+legend("bottomleft", legend = c("H", "HeLs", "LeHs", "HeHs"), bty = "n",
+       col = c("grey", "#73AE80", "#6C83B5", "#2A5A5B"), pch = 19,
+       cex = .8, ncol = 2
+       )
+
+```
+
+**Development**
+
+```{r}
+
+# D_H
+lpdid.h <- lpdid(df = data_cat[data_cat$category=="Development", ], 
+                 window = c(-5, 9), 
+                y = "log_Y", treat_status = "D_H",
+                unit_index = "iso3c", time_index = "year",
+                controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+                nonabsorbing_lag = 1,
+                cluster	= "iso3c")
+
+# D_HeHs
+lpdid.hehs <- lpdid(df = data_cat[data_cat$category=="Development", ], 
+                    window = c(-5, 9), 
+                y = "log_Y", treat_status = "D_HeHs",
+                unit_index = "iso3c", time_index = "year",
+                controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+                nonabsorbing_lag = 1,
+                cluster	= "iso3c")
+
+# D_HeLs
+lpdid.hels <- lpdid(df = data_cat[data_cat$category=="Development", ], 
+                    window = c(-5, 9),
+                y = "log_Y", treat_status = "D_HeLs",
+                unit_index = "iso3c", time_index = "year",
+                controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+                nonabsorbing_lag = 1,
+                cluster	= "iso3c")
+
+# D_LeHs
+lpdid.lehs <- lpdid(df = data_cat[data_cat$category=="Development", ], 
+                    window = c(-5, 9), 
+                y = "log_Y", treat_status = "D_LeHs",
+                unit_index = "iso3c", time_index = "year",
+                controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+                nonabsorbing_lag = 1,
+                cluster	= "iso3c")
+
+par(mar = c(4.1, 4.1, 4.1, 4.1))
+
+plot_lpdid(main = "Development (K=1)",
+           lpdid.h, col = "grey", x.shift = -.2, ylim = c(-3,2))
+plot_lpdid(lpdid.hels, add = TRUE, col = "#73AE80", x.shift = -.1)
+plot_lpdid(lpdid.lehs, add = TRUE, col = "#6C83B5", x.shift = 0)
+plot_lpdid(lpdid.hehs, add = TRUE, col = "#2A5A5B", x.shift = .1)
+
+abline(h = mean(c(15, 15, 35)), lty = 2)
+legend("bottomleft", legend = c("H", "HeLs", "LeHs", "HeHs"), bty = "n",
+       col = c("grey", "#73AE80", "#6C83B5", "#2A5A5B"), 
+       pch = 19, cex = .8, ncol = 2
+       )
+
+```
+
+```{r}
+
+# D_H
+lpdid.h <- lpdid(df = data_cat[data_cat$category=="Development", ], 
+                 window = c(-5, 9), 
+                y = "log_Y", treat_status = "D_H",
+                unit_index = "iso3c", time_index = "year",
+                controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+                nonabsorbing_lag = 5,
+                cluster	= "iso3c")
+
+# D_HeHs
+lpdid.hehs <- lpdid(df = data_cat[data_cat$category=="Development", ], 
+                    window = c(-5, 9), 
+                y = "log_Y", treat_status = "D_HeHs",
+                unit_index = "iso3c", time_index = "year",
+                controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+                nonabsorbing_lag = 5,
+                cluster	= "iso3c")
+
+# D_HeLs
+lpdid.hels <- lpdid(df = data_cat[data_cat$category=="Development", ], 
+                    window = c(-5, 9),
+                y = "log_Y", treat_status = "D_HeLs",
+                unit_index = "iso3c", time_index = "year",
+                controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+                nonabsorbing_lag = 5,
+                cluster	= "iso3c")
+
+# D_LeHs
+lpdid.lehs <- lpdid(df = data_cat[data_cat$category=="Development", ], 
+                    window = c(-5, 9), 
+                y = "log_Y", treat_status = "D_LeHs",
+                unit_index = "iso3c", time_index = "year",
+                controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+                nonabsorbing_lag = 5,
+                cluster	= "iso3c")
+
+par(mar = c(4.1, 4.1, 4.1, 4.1))
+
+plot_lpdid(main = "Development (K=5)",
+           lpdid.h, col = "grey", x.shift = -.2, ylim = c(-3,2))
+plot_lpdid(lpdid.hels, add = TRUE, col = "#73AE80", x.shift = -.1)
+plot_lpdid(lpdid.lehs, add = TRUE, col = "#6C83B5", x.shift = 0)
+plot_lpdid(lpdid.hehs, add = TRUE, col = "#2A5A5B", x.shift = .1)
+
+abline(h = mean(c(15, 15, 35)), lty = 2)
+legend("bottomleft", legend = c("H", "HeLs", "LeHs", "HeHs"), bty = "n",
+       col = c("grey", "#73AE80", "#6C83B5", "#2A5A5B"), 
+       pch = 19, cex = .8, ncol = 2
+       )
+
+```
+
+**Budgetary**
+
+```{r}
+
+# D_H
+lpdid.h <- lpdid(df = data_cat[data_cat$category=="Budgetary", ], 
+                 window = c(-5, 9), 
+                y = "log_Y", treat_status = "D_H",
+                unit_index = "iso3c", time_index = "year",
+                controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+                nonabsorbing_lag = 1,
+                cluster	= "iso3c")
+
+# D_HeHs
+lpdid.hehs <- lpdid(df = data_cat[data_cat$category=="Budgetary", ], 
+                    window = c(-5, 9), 
+                y = "log_Y", treat_status = "D_HeHs",
+                unit_index = "iso3c", time_index = "year",
+                controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+                nonabsorbing_lag = 1,
+                cluster	= "iso3c")
+
+# D_HeLs
+lpdid.hels <- lpdid(df = data_cat[data_cat$category=="Budgetary", ], 
+                    window = c(-5, 9),
+                y = "log_Y", treat_status = "D_HeLs",
+                unit_index = "iso3c", time_index = "year",
+                controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+                nonabsorbing_lag = 1,
+                cluster	= "iso3c")
+
+# D_LeHs
+lpdid.lehs <- lpdid(df = data_cat[data_cat$category=="Budgetary", ], 
+                    window = c(-5, 9), 
+                y = "log_Y", treat_status = "D_LeHs",
+                unit_index = "iso3c", time_index = "year",
+                controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+                nonabsorbing_lag = 1,
+                cluster	= "iso3c")
+
+par(mar = c(4.1, 4.1, 4.1, 4.1))
+
+plot_lpdid(main = "Budgetary (k=1)",
+           lpdid.h, col = "grey", x.shift = -.2, ylim = c(-8,8))
+plot_lpdid(lpdid.hels, add = TRUE, col = "#73AE80", x.shift = -.1)
+plot_lpdid(lpdid.lehs, add = TRUE, col = "#6C83B5", x.shift = 0)
+plot_lpdid(lpdid.hehs, add = TRUE, col = "#2A5A5B", x.shift = .1)
+
+abline(h = mean(c(15, 15, 35)), lty = 2)
+legend("bottomleft", legend = c("H", "HeLs", "LeHs", "HeHs"), bty = "n",
+       col = c("grey", "#73AE80", "#6C83B5", "#2A5A5B"), 
+       pch = 19, cex = .8, ncol = 2)
+
+```
+
+```{r}
+
+# All
+lpdid <- lpdid(df = data,
+                   window = c(-5, 9),
+                   y = "log_Y", treat_status = "D_H",
+                   unit_index = "iso3c", time_index = "year",
+                   controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+                   nonabsorbing_lag = 1,
+                   cluster	= "iso3c")
+
+# Humanitarian
+lpdid.hum <- lpdid(df = data_cat[data_cat$category=="Humanitarian", ],
+                   window = c(-5, 9),
+                   y = "log_Y", treat_status = "D_H",
+                   unit_index = "iso3c", time_index = "year",
+                   controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+                   nonabsorbing_lag = 1,
+                   cluster	= "iso3c")
+
+# Government & Peace
+lpdid.gov <- lpdid(df = data_cat[data_cat$category=="Gov. & Peace", ], 
+                 window = c(-5, 9), 
+                y = "log_Y", treat_status = "D_H",
+                unit_index = "iso3c", time_index = "year",
+                controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+                nonabsorbing_lag = 1,
+                cluster	= "iso3c")
+
+# Development
+lpdid.dev <- lpdid(df = data_cat[data_cat$category=="Development", ], 
+                 window = c(-5, 9), 
+                y = "log_Y", treat_status = "D_H",
+                unit_index = "iso3c", time_index = "year",
+                controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+                nonabsorbing_lag = 1,
+                cluster	= "iso3c")
+
+# Budgetary
+lpdid.bud <- lpdid(df = data_cat[data_cat$category=="Budgetary", ], 
+                 window = c(-5, 9), 
+                y = "log_Y", treat_status = "D_H",
+                unit_index = "iso3c", time_index = "year",
+                controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+                nonabsorbing_lag = 1,
+                cluster	= "iso3c")
+
+par(mar = c(4.1, 4.1, 4.1, 4.1))
+
+plot_lpdid(main = "D_H (K=1)", lpdid, col = "grey", x.shift = -.2, ylim = c(-3,3))
+plot_lpdid(lpdid.hum, add = TRUE, col = "tomato", x.shift = -.1)
+#plot_lpdid(lpdid.gov, add = TRUE, col = "orange", x.shift = 0)
+plot_lpdid(lpdid.dev, add = TRUE, col = "dodgerblue", x.shift = .1)
+#plot_lpdid(lpdid.bud, add = TRUE, col = "darkgreen", x.shift = .2)
+
+abline(h = mean(c(15, 15, 35)), lty = 2)
+legend("bottomleft", 
+       legend = c("All", "Humanitarian", "Gov. & Peace", "Development", "Budgetary"), 
+       bty = "n",
+       col = c("grey", "tomato", "orange", "dodgerblue", "darkgreen"), 
+       pch = 19, ncol = 2, cex = .8)
+
+```
+
+```{r}
+
+# All
+lpdid <- lpdid(df = data,
+                   window = c(-5, 9),
+                   y = "log_Y", treat_status = "D_H",
+                   unit_index = "iso3c", time_index = "year",
+                   controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+                   nonabsorbing_lag = 5,
+                   cluster	= "iso3c")
+
+# Humanitarian
+lpdid.hum <- lpdid(df = data_cat[data_cat$category=="Humanitarian", ],
+                   window = c(-5, 9),
+                   y = "log_Y", treat_status = "D_H",
+                   unit_index = "iso3c", time_index = "year",
+                   controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+                   nonabsorbing_lag = 5,
+                   cluster	= "iso3c")
+
+# Government & Peace
+lpdid.gov <- lpdid(df = data_cat[data_cat$category=="Gov. & Peace", ], 
+                 window = c(-5, 9), 
+                y = "log_Y", treat_status = "D_H",
+                unit_index = "iso3c", time_index = "year",
+                controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+                nonabsorbing_lag = 5,
+                cluster	= "iso3c")
+
+# Development
+lpdid.dev <- lpdid(df = data_cat[data_cat$category=="Development", ], 
+                 window = c(-5, 9), 
+                y = "log_Y", treat_status = "D_H",
+                unit_index = "iso3c", time_index = "year",
+                controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+                nonabsorbing_lag = 5,
+                cluster	= "iso3c")
+
+# Budgetary
+lpdid.bud <- lpdid(df = data_cat[data_cat$category=="Budgetary", ], 
+                 window = c(-5, 9), 
+                y = "log_Y", treat_status = "D_H",
+                unit_index = "iso3c", time_index = "year",
+                controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+                nonabsorbing_lag = 5,
+                cluster	= "iso3c")
+
+par(mar = c(4.1, 4.1, 4.1, 4.1))
+
+plot_lpdid(main = "D_H (K=5)", lpdid, col = "grey", x.shift = -.2, ylim = c(-4,4))
+plot_lpdid(lpdid.hum, add = TRUE, col = "tomato", x.shift = -.1)
+#plot_lpdid(lpdid.gov, add = TRUE, col = "orange", x.shift = 0)
+plot_lpdid(lpdid.dev, add = TRUE, col = "dodgerblue", x.shift = .1)
+#plot_lpdid(lpdid.bud, add = TRUE, col = "darkgreen", x.shift = .2)
+
+abline(h = mean(c(15, 15, 35)), lty = 2)
+legend("bottomleft", 
+       legend = c("All", "Humanitarian", "Gov. & Peace", "Development", "Budgetary"), 
+       bty = "n",
+       col = c("grey", "tomato", "orange", "dodgerblue", "darkgreen"), 
+       pch = 19, ncol = 2, cex = .8)
+
+```
+
+```{r}
+
+# All
+lpdid <- lpdid(df = data,
+                   window = c(-5, 9),
+                   y = "log_Y", treat_status = "D_HeHs",
+                   unit_index = "iso3c", time_index = "year",
+                   controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+                   nonabsorbing_lag = 1,
+                   cluster	= "iso3c")
+
+# Humanitarian
+lpdid.hum <- lpdid(df = data_cat[data_cat$category=="Humanitarian", ],
+                   window = c(-5, 9),
+                   y = "log_Y", treat_status = "D_HeHs",
+                   unit_index = "iso3c", time_index = "year",
+                   controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+                   nonabsorbing_lag = 1,
+                   cluster	= "iso3c")
+
+# Government & Peace
+lpdid.gov <- lpdid(df = data_cat[data_cat$category=="Gov. & Peace", ], 
+                 window = c(-5, 9), 
+                y = "log_Y", treat_status = "D_HeHs",
+                unit_index = "iso3c", time_index = "year",
+                controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+                nonabsorbing_lag = 1,
+                cluster	= "iso3c")
+
+# Development
+lpdid.dev <- lpdid(df = data_cat[data_cat$category=="Development", ], 
+                 window = c(-5, 9), 
+                y = "log_Y", treat_status = "D_HeHs",
+                unit_index = "iso3c", time_index = "year",
+                controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+                nonabsorbing_lag = 1,
+                cluster	= "iso3c")
+
+# Budgetary
+lpdid.bud <- lpdid(df = data_cat[data_cat$category=="Budgetary", ], 
+                 window = c(-5, 9), 
+                y = "log_Y", treat_status = "D_HeHs",
+                unit_index = "iso3c", time_index = "year",
+                controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+                nonabsorbing_lag = 1,
+                cluster	= "iso3c")
+
+par(mar = c(4.1, 4.1, 4.1, 4.1))
+
+plot_lpdid(main = "D_HeHs (K=1)", lpdid, col = "grey", x.shift = -.2, ylim = c(-5,5))
+plot_lpdid(lpdid.hum, add = TRUE, col = "tomato", x.shift = -.1)
+#plot_lpdid(lpdid.gov, add = TRUE, col = "orange", x.shift = 0)
+plot_lpdid(lpdid.dev, add = TRUE, col = "dodgerblue", x.shift = .1)
+#plot_lpdid(lpdid.bud, add = TRUE, col = "darkgreen", x.shift = .2)
+
+abline(h = mean(c(15, 15, 35)), lty = 2)
+legend("bottomleft", 
+       legend = c("All", "Humanitarian", "Gov. & Peace", "Development", "Budgetary"), 
+       bty = "n",
+       col = c("grey", "tomato", "orange", "dodgerblue", "darkgreen"), 
+       pch = 19, ncol = 2, cex = .8)
+
+```
+
+```{r}
+
+
+# All
+lpdid <- lpdid(df = data,
+                   window = c(-5, 9),
+                   y = "log_Y", treat_status = "D_HeHs",
+                   unit_index = "iso3c", time_index = "year",
+                   controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+                   nonabsorbing_lag = 5,
+                   cluster	= "iso3c")
+
+# Humanitarian
+lpdid.hum <- lpdid(df = data_cat[data_cat$category=="Humanitarian", ],
+                   window = c(-5, 9),
+                   y = "log_Y", treat_status = "D_HeHs",
+                   unit_index = "iso3c", time_index = "year",
+                   controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+                   nonabsorbing_lag = 5,
+                   cluster	= "iso3c")
+
+# Government & Peace
+lpdid.gov <- lpdid(df = data_cat[data_cat$category=="Gov. & Peace", ], 
+                 window = c(-5, 9), 
+                y = "log_Y", treat_status = "D_HeHs",
+                unit_index = "iso3c", time_index = "year",
+                controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+                nonabsorbing_lag = 5,
+                cluster	= "iso3c")
+
+# Development
+lpdid.dev <- lpdid(df = data_cat[data_cat$category=="Development", ], 
+                 window = c(-5, 9), 
+                y = "log_Y", treat_status = "D_HeHs",
+                unit_index = "iso3c", time_index = "year",
+                controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+                nonabsorbing_lag = 5,
+                cluster	= "iso3c")
+
+# Budgetary
+lpdid.bud <- lpdid(df = data_cat[data_cat$category=="Budgetary", ], 
+                 window = c(-5, 9), 
+                y = "log_Y", treat_status = "D_HeHs",
+                unit_index = "iso3c", time_index = "year",
+                controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+                nonabsorbing_lag = 5,
+                cluster	= "iso3c")
+
+par(mar = c(4.1, 4.1, 4.1, 4.1))
+
+plot_lpdid(main = "D_HeHs (K=5)", lpdid, col = "grey", x.shift = -.2, ylim = c(-5,5))
+plot_lpdid(lpdid.hum, add = TRUE, col = "tomato", x.shift = -.1)
+#plot_lpdid(lpdid.gov, add = TRUE, col = "orange", x.shift = 0)
+plot_lpdid(lpdid.dev, add = TRUE, col = "dodgerblue", x.shift = .1)
+#plot_lpdid(lpdid.bud, add = TRUE, col = "darkgreen", x.shift = .2)
+
+abline(h = mean(c(15, 15, 35)), lty = 2)
+legend("bottomleft", 
+       legend = c("All", "Humanitarian", "Gov. & Peace", "Development", "Budgetary"), 
+       bty = "n",
+       col = c("grey", "tomato", "orange", "dodgerblue", "darkgreen"), 
+       pch = 19, ncol = 2, cex = .8)
+
+```
+
+```{r}
+
+# All
+lpdid <- lpdid(df = data,
+                   window = c(-5, 8),
+                   y = "log_Y", treat_status = "D_HeLs",
+                   unit_index = "iso3c", time_index = "year",
+                   controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+                   nonabsorbing_lag = 5,
+                   cluster	= "iso3c")
+
+# Humanitarian
+lpdid.hum <- lpdid(df = data_cat[data_cat$category=="Humanitarian", ],
+                   window = c(-5, 8),
+                   y = "log_Y", treat_status = "D_HeLs",
+                   unit_index = "iso3c", time_index = "year",
+                   controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+                   nonabsorbing_lag = 5,
+                   cluster	= "iso3c")
+
+# Government & Peace
+lpdid.gov <- lpdid(df = data_cat[data_cat$category=="Gov. & Peace", ], 
+                 window = c(-5, 8), 
+                y = "log_Y", treat_status = "D_HeLs",
+                unit_index = "iso3c", time_index = "year",
+                controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+                nonabsorbing_lag = 5,
+                cluster	= "iso3c")
+
+# Development
+lpdid.dev <- lpdid(df = data_cat[data_cat$category=="Development", ], 
+                 window = c(-5, 8), 
+                y = "log_Y", treat_status = "D_HeLs",
+                unit_index = "iso3c", time_index = "year",
+                controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+                nonabsorbing_lag = 5,
+                cluster	= "iso3c")
+
+# Budgetary
+lpdid.bud <- lpdid(df = data_cat[data_cat$category=="Budgetary", ], 
+                 window = c(-5, 8), 
+                y = "log_Y", treat_status = "D_HeLs",
+                unit_index = "iso3c", time_index = "year",
+                controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+                nonabsorbing_lag = 5,
+                cluster	= "iso3c")
+
+par(mar = c(4.1, 4.1, 4.1, 4.1))
+
+plot_lpdid(main = "D_HeLs (K=5)", lpdid, col = "grey", x.shift = -.2, ylim = c(-5,5))
+plot_lpdid(lpdid.hum, add = TRUE, col = "tomato", x.shift = -.1)
+#plot_lpdid(lpdid.gov, add = TRUE, col = "orange", x.shift = 0)
+plot_lpdid(lpdid.dev, add = TRUE, col = "dodgerblue", x.shift = .1)
+#plot_lpdid(lpdid.bud, add = TRUE, col = "darkgreen", x.shift = .2)
+
+abline(h = mean(c(15, 15, 35)), lty = 2)
+legend("bottomleft", 
+       legend = c("All", "Humanitarian", "Gov. & Peace", "Development", "Budgetary"), 
+       bty = "n",
+       col = c("grey", "tomato", "orange", "dodgerblue", "darkgreen"), 
+       pch = 19, ncol = 2, cex = .8)
+
+```
+
+```{r}
+
+# All
+lpdid <- lpdid(df = data,
+                   window = c(-5, 8),
+                   y = "log_Y", treat_status = "D_LeHs",
+                   unit_index = "iso3c", time_index = "year",
+                   controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+                   nonabsorbing_lag = 5,
+                   cluster	= "iso3c")
+
+# Humanitarian
+lpdid.hum <- lpdid(df = data_cat[data_cat$category=="Humanitarian", ],
+                   window = c(-5, 8),
+                   y = "log_Y", treat_status = "D_LeHs",
+                   unit_index = "iso3c", time_index = "year",
+                   controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+                   nonabsorbing_lag = 5,
+                   cluster	= "iso3c")
+
+# Government & Peace
+lpdid.gov <- lpdid(df = data_cat[data_cat$category=="Gov. & Peace", ], 
+                 window = c(-5, 8), 
+                y = "log_Y", treat_status = "D_LeHs",
+                unit_index = "iso3c", time_index = "year",
+                controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+                nonabsorbing_lag = 5,
+                cluster	= "iso3c")
+
+# Development
+lpdid.dev <- lpdid(df = data_cat[data_cat$category=="Development", ], 
+                 window = c(-5, 8), 
+                y = "log_Y", treat_status = "D_LeHs",
+                unit_index = "iso3c", time_index = "year",
+                controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+                nonabsorbing_lag = 5,
+                cluster	= "iso3c")
+
+# Budgetary
+lpdid.bud <- lpdid(df = data_cat[data_cat$category=="Budgetary", ], 
+                 window = c(-5, 8), 
+                y = "log_Y", treat_status = "D_LeHs",
+                unit_index = "iso3c", time_index = "year",
+                controls = ~ log_pop_2003 + log_gdp.pc_2003 | region_agg^year,
+                nonabsorbing_lag = 5,
+                cluster	= "iso3c")
+
+par(mar = c(4.1, 4.1, 4.1, 4.1))
+
+plot_lpdid(main = "D_LeHs (K=5)", lpdid, col = "grey", x.shift = -.2, ylim = c(-5,5))
+plot_lpdid(lpdid.hum, add = TRUE, col = "tomato", x.shift = -.1)
+#plot_lpdid(lpdid.gov, add = TRUE, col = "orange", x.shift = 0)
+plot_lpdid(lpdid.dev, add = TRUE, col = "dodgerblue", x.shift = .1)
+#plot_lpdid(lpdid.bud, add = TRUE, col = "darkgreen", x.shift = .2)
+
+abline(h = mean(c(15, 15, 35)), lty = 2)
+legend("bottomleft", 
+       legend = c("All", "Humanitarian", "Gov. & Peace", "Development", "Budgetary"), 
+       bty = "n",
+       col = c("grey", "tomato", "orange", "dodgerblue", "darkgreen"), 
+       pch = 19, ncol = 2, cex = .8)
+
+```

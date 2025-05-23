@@ -1,0 +1,618 @@
+---
+title: "Untitled"
+format: html
+editor: visual
+---
+
+```{r, load_pckg}
+
+source(here::here('scripts', 'library.R'))
+```
+
+```{r load_data}
+
+load(here("data", "data_sample.RData"))
+load(here("data", "data_covariate.RData"))
+```
+
+# Level: Country-year
+
+## Treatment: High exposure \| severity
+
+```{r}
+
+# define sample
+data <- data_sample_iso |> 
+  # observation window 2003:2018
+  filter(year %in% c(2003:2018)) |> 
+  # treatment window 2008:2013 (2003+5:2018-5): include 'clean treated' units + 'never treated' units
+  filter(cohort_D_H %in% c(2008:2013, 9999)) |> 
+  # treatment: high exposure|severity
+  dplyr::select(iso3c, year, t, Y, Y_d, ends_with("_H"), matches("_H_"), gdp:region_agg) |> 
+  rename_with(~ str_remove_all(., "D_H_"), contains("D_H_")) |> 
+  rename_with(~ str_remove_all(., "_H"), contains("_H"))
+  
+```
+
+```{r}
+
+## log-transformation
+# outcome
+data$log_Y <- log(data$Y + .001)
+
+# pre-treatment characteristics
+data$log_pop_2003 <- log(data$pop_2003)
+data$log_gdp_2003 <- log(data$gdp_2003)
+data$log_gdp.pc_2003 <- log(data$gdp.pc_2003)
+
+# label new variables
+labelled::var_label(data) <- list(
+  log_Y = "ODA commitments, constant 2021 USD (log)",
+  log_pop_2003 = "Population in 2003, total (log)",
+  pop_0307 = "Change in population 2003-07, total",
+  log_gdp_2003 = "GDP in 2003, PPP, constant 2021 international USD (log)",
+  gdp_0307 = "Change in GDP 2003-07, PPP, constant 2021 international USD",
+  log_gdp.pc_2003 = "GDP per capita in 2003, PPP, constant 2021 international USD (log)",
+  gdp.pc_0307 = "Change in GDP per capita 2003-07, PPP, constant 2021 international USD",
+  storm_0307	= "Number of storms over the 2003-07 period",
+  drought_0307 = "Number of droughts over the 2003-07 period",
+  region_agg = "Region",
+  inc_gp_03 = "Income group, 2003",
+  inc_gp_07 = "Income group, 2007"
+)
+  
+```
+
+```{r}
+
+# Compare units 'ever treated' w/in the *observation* window vs. 'never treated'
+# N.B. 'Never-treated' units = never treated w/in the observation window
+
+data |> 
+  dplyr::select(iso3c, ever_treated, matches("(gdp|pop|dro|sto|inc|reg).*0(3|7)"), region_agg) |> 
+  distinct() |> 
+# get_dupes(iso3c)
+  mutate(ever_treated = factor(ever_treated, labels = c("Never treated", "Treated (2008-13 cohorts)"))) |> 
+  tbl_summary(
+    include = c("log_pop_2003", "pop_0307", "log_gdp_2003", "gdp_0307", "log_gdp.pc_2003", "gdp.pc_0307",  "storm_0307", "drought_0307", "region_agg", "inc_gp_03", "inc_gp_07"),
+    by = ever_treated,
+    statistic = all_continuous() ~ "{mean} ({sd})",
+    type = list(c("storm_0307", "drought_0307") ~ "continuous")
+  ) |> 
+  add_overall(last = TRUE) |> 
+  add_p(test = all_continuous() ~ "oneway.test",
+        test.args = all_continuous() ~ list(var.equal = TRUE))
+
+```
+
+### Set-up
+
+```{r sample}
+
+# Bin periods outcome time window of interest (-5:5)
+data$rel_time <- bin(data$rel_time, list("≤ -6" = ~x < -5, "≥ 6" = ~x > 5))
+
+```
+
+```{r}
+
+visdat::vis_miss(data)
+
+```
+
+```{r}
+
+# Constructs a fixest panel data base
+data = panel(data, ~iso3c+year)
+
+# no endogenous treatment timing, i.e.,
+# the probability of receiving treatment does not depend on previous outcome dynamics.
+```
+
+## Binary and staggered ('first-only') treatment
+
+### TWFE
+
+#### Region-Year FEs
+
+```{r}
+
+# No region-year FEs
+twfe <- feols(log_Y ~ i(rel_time, ever_treated, ref = c(-1, 9999)) | iso3c + year, data = data)
+
+# OECD region-year FEs
+twfe_reg <- feols(log_Y ~ i(rel_time, ever_treated, ref = c(-1, 9999)) | region_name^year + iso3c + year, data = data)
+
+# Aggregate region-year FEs
+twfe_aggreg <- feols(log_Y ~ i(rel_time, ever_treated, ref = c(-1, 9999)) | region_agg^year + iso3c + year, data = data)
+
+# plot
+iplot(twfe, x.shift = -.2, col = "grey70", main = "Region-Year FEs")
+iplot(twfe_reg, add = TRUE, x.shift = 0, col = "dodgerblue")
+iplot(twfe_aggreg, add = TRUE, x.shift = .2, col = "tomato")
+
+legend("topleft", bty = "n",
+       c("TWFE", "TWFE | region^year", "TWFE | agg.region^year"),
+       pch = c(19, 19, 19),
+       col = c("grey70","dodgerblue", "tomato"),
+       y.intersp = 0.3)
+
+# NOTE:
+# Region-Year FEs 'flatten' estimates 
+# Agg. Region CIs < OECD Region CIs
+# Updated Baseline = i + t + Agg.Region-Year FEs
+```
+
+#### Country-level linear time trends
+
+```{r}
+
+# Baseline + Country-specific LTTs
+twfe_aggreg_iso.lt <- feols(log_Y ~ i(rel_time, ever_treated, ref = c(-1, 9999)) | iso3c[t] + region_agg^year + iso3c + year, data = data)
+
+# Baseline + Population_2003 LTTs
+twfe_aggreg_pop.lt <- feols(log_Y ~ i(rel_time, ever_treated, ref = c(-1, 9999)) | log_pop_2003[t] +  region_agg^year + iso3c + year, data = data)
+
+# plot
+iplot(twfe_aggreg, x.shift = -.2, col = "grey70", main = "Linear time trends")
+iplot(twfe_aggreg_iso.lt, add = TRUE, x.shift = 0, col = "dodgerblue")
+iplot(twfe_aggreg_pop.lt, add = TRUE, x.shift = .2, col = "tomato")
+
+legend("topleft", bty = "n",
+       c("TWFE | agg.region^year (baseline)", "Baseline + Country-LTTs", "Baseline + Pop_2003-LTTs"),
+       pch = c(19, 19, 19),
+       col = c("grey70","dodgerblue", "tomato"),
+       y.intersp = 0.3)
+
+# NOTE:
+# Linear trends 'flatten' pre-treat estimates, but similar to post-treat baseline
+# Country LTs = Pop_2003 LTs
+# LTs CIs < Baseline CIs
+# Country LTs CIs < Pop_2003 LTs CIs
+# Updated Baseline = i + t + Agg.Region-Year FEs + Country-LTs
+```
+
+#### Covariates
+
+##### Population (slow-moving)
+
+```{r}
+
+# Baseline
+twfe_aggreg_iso.lt <- feols(log_Y ~ i(rel_time, ever_treated, ref = c(-1, 9999)) | iso3c[t] +  region_agg^year + iso3c + year, data = data)
+
+# Baseline + Population
+data$log_pop <- data$
+twfe_aggreg_pop <- feols(log_Y ~ l(log_pop, k=-1) + i(rel_time, ever_treated, ref = c(-1, 9999)) | region_agg^year + iso3c + year, data = data)
+
+# Baseline + Population_2003 + GDP_2003
+twfe_aggreg_pop_gdp <- feols(log_Y ~ log_pop_2003 + log_gdp_2003 + i(rel_time, ever_treated, ref = c(-1, 9999)) | region_agg^year + iso3c + year, data = data)
+
+# plot
+iplot(twfe_aggreg_iso.lt, x.shift = -.2, col = "grey70", main = "Population + GDP (pre-treatment, 2003)")
+iplot(twfe_aggreg_pop, add = TRUE, x.shift = 0, col = "dodgerblue")
+iplot(twfe_aggreg_pop_gdp, add = TRUE, x.shift = .2, col = "tomato")
+
+legend("topleft", bty = "n",
+       c("TWFE + region_agg^year + iso3c[t] (baseline)", "Baseline + Population", "Baseline + Population + GDP"),
+       pch = c(19, 19, 19),
+       col = c("grey70", "dodgerblue", "tomato"),
+       y.intersp = 0.3)
+
+# NOTE:
+# Pop. pre-treat estimates are similar to Baseline, but lower post-treat
+# Pop. CIs are wider than to Baseline
+# No change in Baseline
+```
+
+##### Compound events
+
+```{r}
+
+# Baseline + storm
+twfe_aggreg_iso.lt_sto <- feols(log_Y ~ storm + i(rel_time, ever_treated, ref = c(-1, 9999)) | iso3c[t] +  region_agg^year + iso3c + year, data = data)
+
+# Baseline + storm + drought
+twfe_aggreg_iso.lt_sto_dro <- feols(log_Y ~ storm + drought + i(rel_time, ever_treated, ref = c(-1, 9999)) | iso3c[t] +  region_agg^year + iso3c + year, data = data)
+
+
+# plot
+iplot(twfe_aggreg_iso.lt, x.shift = -.2, col = "grey70", main = "Region-Year FEs")
+iplot(twfe_aggreg_iso.lt_sto, add = TRUE, x.shift = 0, col = "dodgerblue")
+iplot(twfe_aggreg_iso.lt_sto_dro, add = TRUE, x.shift = .2, col = "tomato")
+
+legend("topleft", bty = "n",
+       c("TWFE + region_agg^year + iso3c[t] (baseline)", "Baseline + Storm", "Baseline + storm + drought"),
+       pch = c(19, 19, 19),
+       col = c("grey70", "dodgerblue", "tomato"),
+       y.intersp = 0.3)
+
+# NOTE:
+# No change in estimates
+# Baseline CIs < Baseline + storm/drought
+# No change in Baseline
+```
+
+### HTE-Robust TWFE
+
+```{r}
+
+data$iso3 <- as.numeric(factor(data$iso3c))
+
+# estimate group-time average treatment effects without covariates
+mw.attgt <- att_gt(yname = "log_Y",
+                   gname = "cohort_D",
+                   idname = "iso3",
+                   tname = "year",
+                   xformla = ~1,
+                   data = data
+                   )
+
+# summarize the results
+summary(mw.attgt)
+
+mw.dyn <- aggte(mw.attgt, type = "dynamic")
+summary(mw.dyn)
+
+ggdid(mw.dyn)
+```
+
+```{r}
+
+
+est <- lpdid(df = data, window = c(-6, 6),
+    y = "log_Y",
+    treat_status = "D",
+    unit_index = "iso3c", time_index = "year",
+    cluster	= "iso3c"
+    )
+
+fixef(est)
+nlme::fixed.effects(est)
+
+# LP-DID Staggered binary "first treatment"
+stag_first_res <- lpdid(df = data, window = c(-10, 10),
+    y = "log_Y",
+    treat_status = "D_HeHs_first",
+    unit_index = "iso3c", time_index = "year",
+    cluster	= "iso3c"
+    )
+
+# LP-DID Non-absorbing binary treatment (w/out Y_lag)
+nabs_res <- lpdid(df = data, window = c(-6, 6),
+    y = "log_Y",
+    treat_status = "D_HeHs",
+    unit_index = "iso3c", time_index = "year",
+    nonabsorbing_lag = 5,
+    cluster	= "iso3c"
+    )  
+
+# LP-DID Non-absorbing binary treatment (w/ Y_lag)
+nabs_res_l <- lpdid(df = data, window = c(-6, 6),
+    y = "log_Y",
+    treat_status = "D_HeHs",
+    outcome_lags = 1,
+    unit_index = "iso3c", time_index = "year",
+    nonabsorbing_lag = 5,
+    cluster	= "iso3c"
+    ) 
+  
+plot_lpdid(stag_first_res, x.shift = -0.1, col = "dodgerblue")
+plot_lpdid(nabs_res, x.shift = 0.1, col = "tomato", add = T)
+plot_lpdid(nabs_res_l, x.shift = 0.2, col = "orange", add = T)
+
+abline(h = mean(c(15, 15, 35)), lty = 2)
+legend("bottomleft", 
+       legend = c("Staggered binary first treatment", 
+                  "Non-absorbing binary treatment (K=5)",
+                  "Non-absorbing binary treatment (K=5) + Y_lag"
+                  ), 
+       bty = "n",
+       col = c("dodgerblue", "tomato", "orange"), pch = 19)
+```
+
+## Binary and non-absorbing treatment
+
+### LP-DID
+
+## Heterogeneity
+
+### Treatment intensity
+
+### ODA category
+
+# Level: sector-country-year
+
+## Extensive margin
+
+## Intensive margin
+
+```{r nonabs_lags}
+
+res_1 <- lpdid(df = data, window = c(-7, 10),
+    y = "log_Y",
+    treat_status = "D_HeHs",
+    unit_index = "iso3c", time_index = "year",
+    outcome_lags = 1,
+    nonabsorbing_lag = 1,
+    cluster	= "iso3c"
+    )
+    
+res_3 <- lpdid(df = data, window = c(-7, 10),
+    y = "log_Y",
+    treat_status = "D_HeHs",
+    unit_index = "iso3c", time_index = "year",
+    outcome_lags = 1,
+    nonabsorbing_lag = 3,
+    cluster	= "iso3c"
+    )
+
+res_5 <- lpdid(df = data, window = c(-7, 10),
+    y = "log_Y",
+    treat_status = "D_HeHs",
+    unit_index = "iso3c", time_index = "year",
+    outcome_lags = 1,
+    nonabsorbing_lag = 5,
+    cluster	= "iso3c"
+    )
+
+plot_lpdid(res_1, x.shift = -0.1, col = "dodgerblue", main = "Non-absorbing lags")
+plot_lpdid(res_3, x.shift = 0, col = "tomato", add = T)
+plot_lpdid(res_5, x.shift = 0.1, col = "darkgreen", add = T)
+
+abline(h = mean(c(15, 15, 35)), lty = 2)
+legend("topleft", legend = c("K=1", "K=3", "K=5"), bty = "n",
+       col = c("dodgerblue", "tomato", "darkgreen"), pch = 19)
+```
+
+## Treatment type
+
+```{r}
+
+map(treat_list, \(x) {
+  
+  res <- lpdid(df = data, window = c(-5, 10),
+    y = "log_Y",
+    treat_status = x,
+    unit_index = "iso3c", time_index = "year",
+    outcome_lags = 1,
+    nonabsorbing_lag = 5,
+    cluster	= "iso3c"
+    )
+
+  plot_lpdid(res, x.shift = -0.05, col = "dodgerblue", main = x)
+
+})
+
+```
+
+## Fixed effects
+
+```{r}
+
+FEs <- list(
+  ~ 1,
+  ~ 1 | region_agg^year,
+  ~ 1 | region_code^year,
+  ~ 1 | region_code^year + iso3c[[t]]
+)
+```
+
+```{r}
+
+map(FEs, \(x) {
+
+    res_lpdid <- lpdid(df = data, window = c(-5, 10),
+    y = "log_Y",
+    treat_status = "D_HeHs",
+    unit_index = "iso3c", time_index = "year",
+    controls = x,
+    outcome_lags = 1,
+    nonabsorbing_lag = 5,
+    cluster	= "iso3c"
+    )
+    
+    titles <- as.character(x)
+    
+    plot_lpdid(res_lpdid, x.shift = -0.05, col = "dodgerblue",
+                       main = titles)
+})
+```
+
+## Covariates
+
+```{r}
+
+covariates_t <- list(
+  ~ sto_dummy,
+  ~ storm,
+  ~ storm + gdp,
+  ~ storm + gdp.pc + pop
+)
+```
+
+```{r}
+
+map(covariates_t, \(x) {
+
+    res_lpdid <- lpdid(df = data, window = c(-5, 10),
+    y = "log_Y",
+    treat_status = "D_HeHs",
+    unit_index = "iso3c", time_index = "year",
+    controls_t = x,
+    outcome_lags = 1,
+    nonabsorbing_lag = 5,
+    cluster	= "iso3c"
+    )
+    
+    titles <- sub("^~", "", as.character(x))
+    
+    plot_lpdid(res_lpdid, x.shift = -0.05, col = "dodgerblue",
+                       main = titles)
+})
+```
+
+# Category-country-year
+
+```{r}
+
+# sample
+data <- data_sample_iso_cat |> 
+  mutate(
+    cat = case_when(
+      category == "Development" ~ "dev",
+      category == "Gov. & Peace" ~ "gov",
+      category == "Budgetary" ~ "budg",
+      category == "Humanitarian" ~ "hum"
+    ),
+    iso_cat = paste0(iso3c, "_", cat)) |> 
+  relocate(iso_cat, .after = category)
+
+# Constructs a fixest panel data base
+data = panel(data, ~iso_cat+year)
+
+```
+
+```{r}
+
+# outcome
+data$log_Y <- log(data$Y + .001)
+```
+
+```{r}
+
+# list categories
+categories  <- list("Development", "Gov. & Peace", "Budgetary", "Humanitarian")
+```
+
+## Unique sample
+
+```{r}
+
+map(treat_list, \(x) {
+  
+  res <- lpdid(df = data, window = c(-5, 10),
+    y = "log_Y",
+    treat_status = x,
+    unit_index = "iso_cat", time_index = "year",
+    outcome_lags = 1,
+    nonabsorbing_lag = 5,
+    cluster	= "iso3c"
+    )
+
+  plot_lpdid(res, x.shift = -0.05, col = "dodgerblue", main = x)
+  
+})
+```
+
+## Split sample
+
+```{r}
+
+map(categories, \(x) {
+  
+  res <- lpdid(df = data[data$category==x, ], window = c(-5, 10),
+    y = "log_Y",
+    treat_status = "D_HeHs",
+    unit_index = "iso_cat", time_index = "year",
+    outcome_lags = 1,
+    nonabsorbing_lag = 5,
+    cluster	= "iso3c"
+    )
+
+  plot_lpdid(res, x.shift = -0.05, col = "dodgerblue", main = x)
+  
+})
+```
+
+# Sector-country-year
+
+```{r}
+
+# sample
+data <- data_sample_sect
+
+# Constructs a fixest panel data base
+data = panel(data, ~iso_sect_id+year)
+
+# outcome
+data$log_Y <- log(data$commit + .001)
+```
+
+## Binary outcome (extensive margin)
+
+```{r}
+
+# Binary outcome (Y > 0)
+res_1 <- lpdid(df = data, window = c(-5, 10),
+    y = "commit_dummy",
+    treat_status = "D_HeHs",
+    unit_index = "iso_sect_id", time_index = "year",
+    outcome_lags = 1,
+    nonabsorbing_lag = 1,
+    cluster	= "iso3c"
+    )
+
+res_3 <- lpdid(df = data, window = c(-5, 10),
+    y = "commit_dummy",
+    treat_status = "D_HeHs",
+    unit_index = "iso_sect_id", time_index = "year",
+    outcome_lags = 1,
+    nonabsorbing_lag = 3,
+    cluster	= "iso3c"
+    )
+
+res_5 <- lpdid(df = data, window = c(-5, 10),
+    y = "commit_dummy",
+    treat_status = "D_HeHs",
+    unit_index = "iso_sect_id", time_index = "year",
+    outcome_lags = 1,
+    nonabsorbing_lag = 5,
+    cluster	= "iso3c"
+    )
+
+plot_lpdid(res_1, x.shift = -0.1, col = "dodgerblue", main = "Non-absorbing lags")
+plot_lpdid(res_3, x.shift = 0, col = "tomato", add = T)
+plot_lpdid(res_5, x.shift = 0.1, col = "darkgreen", add = T)
+
+abline(h = mean(c(15, 15, 35)), lty = 2)
+legend("topleft", legend = c("K=1", "K=3", "K=5"), bty = "n",
+       col = c("dodgerblue", "tomato", "darkgreen"), pch = 19)
+```
+
+## Log-transformed outcome
+
+```{r}
+
+res <- lpdid(df = data, window = c(-5, 10),
+    y = "log_Y",
+    treat_status = "D_HeHs",
+    unit_index = "iso_sect_id", time_index = "year",
+    outcome_lags = 1,
+    nonabsorbing_lag = 5,
+    cluster	= "iso3c"
+    )
+
+plot_lpdid(res, x.shift = -0.05, col = "dodgerblue")
+
+```
+
+## Split sample
+
+```{r}
+
+map(categories, \(x) {
+  
+  res <- lpdid(df = data[data$category==x, ], window = c(-5, 10),
+    y = "log_Y",
+    treat_status = "D_HeHs",
+    unit_index = "iso_sect_id", time_index = "year",
+    outcome_lags = 1,
+    nonabsorbing_lag = 5,
+    cluster	= "iso3c"
+    )
+
+  plot_lpdid(res, x.shift = -0.05, col = "dodgerblue", main = x)
+  
+})
+```

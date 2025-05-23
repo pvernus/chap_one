@@ -1,0 +1,167 @@
+---
+title: "Data: Outcome"
+format: html
+editor: visual
+---
+
+```{r load_data}
+
+# data source: OECD CRS
+load(here('data', 'data_oecd_crs_clean.RData'))
+```
+
+## Outcome
+
+-   **Quantity**: ODA commitments in constant dollars;
+
+    -   Remove non-concessional official & private flows
+
+    -   Remove donor administrative costs, donor country personnel, and debt relief
+
+```{r data_oda}
+
+data_oda <- data_crs |> 
+# keep ODA only (remove non-concessional official + private flows)  
+  filter(flow_code %in% c(11, 13)) |> 
+# Remove Administrative costs not included elsewhere (G01), Donor country personnel (D01), Debt relief (F01)
+  filter(!aid_t %in% c("G01", "D01", "F01")) |> 
+  filter(!grepl("^(6|9)", purpose_code))
+```
+
+```{r data_oda_check}
+
+unique(data_oda$flow_code)
+unique(data_oda$aid_t)
+
+```
+
+-   **Unit of observation**: purpose-recipient level (280 purposes \* 158 recipient countries = 44240 units);
+
+```{r data_unit}
+
+data_unit <- data_oda |> 
+# remove "regional" recipients  
+  filter(!grepl("regional", recipient_name))
+```
+
+-   **Time period**: year (21 periods).
+
+Total = 929,040 cells (w/ dupes, 922,404 w/out).
+
+> [*Extensions*]{.underline}*: consider (i) disbursements; (ii) alternative definitions of nonzero outcomes, based on rounding (ex: at 0.001 MUSD unit) and by including a threshold (ex: \>= 1 000 USD).*
+
+```{r outcome}
+
+# define the unit of observation
+unit_outcome <- data_unit |> 
+  expand(nesting(purpose_code, purpose_name), # purpose
+         nesting(recipient_id, recipient_name, cohort_recipient), # country
+         year) # year
+
+# define the unit-specific quantity
+quantity_outcome <- data_unit |> 
+   summarize(commit = sum(usd_commitment_defl, na.rm = T),
+             # Channel of delivery
+             commit_nonstate = sum(usd_commitment_defl[channel_nonstate==1], na.rm = T),
+             commit_nonstate_ngo = sum(usd_commitment_defl[channel_nonstate_ngo==1], na.rm = T),
+             commit_nonstate_multi = sum(usd_commitment_defl[channel_nonstate_multi==1], na.rm = T),
+             commit_nonstate_private = sum(usd_commitment_defl[channel_nonstate_private==1], na.rm = T),
+             # Modality
+             commit_budsup = sum(usd_commitment_defl[grepl("^A0", aid_t)], na.rm = T),
+             commit_multi_core = sum(usd_commitment_defl[aid_t=="B01|B02"], na.rm = T),
+             commit_multi_spec = sum(usd_commitment_defl[grepl("^B03", aid_t)], na.rm = T),
+             commit_proj = sum(usd_commitment_defl[aid_t=="C01|D02"], na.rm = T),
+             # Provider
+             commit_bilat = sum(usd_commitment_defl[bi_multi=="Bilateral"], na.rm = T),
+             commit_multi = sum(usd_commitment_defl[bi_multi=="Multilateral"], na.rm = T),
+             # Flow type
+             commit_grant = sum(usd_commitment_defl[flow_name=="ODA Grants"], na.rm = T),
+             commit_loan = sum(usd_commitment_defl[flow_name=="ODA Loans"], na.rm = T),
+             .by = c(recipient_id, purpose_code, year)
+    )
+
+# merge outcome data
+outcome <- merge(unit_outcome, quantity_outcome, 
+                       by=c("purpose_code", "recipient_id", "year"), 
+                       all.x = TRUE) |> 
+# treat "true" zeros: NA if country's registration in OECD CRS > current period  
+  mutate(across(starts_with("commit_"), ~ ifelse(is.na(.x) & cohort_recipient <= year, 0, .x))) |> 
+# create binary outcome vars    
+  mutate(commit_dummy = case_when(
+    commit > 0 ~ 1, 
+    is.na(commit) ~ NA, 
+    .default = 0))
+
+```
+
+```{r}
+
+## Multinomial model
+
+# define the unit of observation
+unit_outcome_multi <- data_unit |> 
+  expand(
+    nesting(recipient_id, recipient_name, cohort_recipient), # country
+    nesting(purpose_code, purpose_name), # purpose
+    channel_nonstate, # channel (two-category)
+    year) # year
+
+# define the unit-specific quantity
+quantity_outcome_multi <- data_unit |> 
+   summarize(commit = sum(usd_commitment_defl, na.rm = T),
+             .by = c(recipient_id, purpose_code, channel_nonstate, year)
+    )
+
+# merge outcome data
+outcome_multi <- merge(unit_outcome_multi, quantity_outcome_multi, 
+                       by=c("recipient_id", "purpose_code", "channel_nonstate", "year"), 
+                       all.x = TRUE) |> 
+# treat "true" zeros: NA if country's registration in OECD CRS > current period  
+  mutate(commit = ifelse(is.na(commit) & cohort_recipient <= year, 0, commit)) |>
+# create binary outcome vars    
+  mutate(commit_dummy = case_when(
+    commit > 0 ~ 1, 
+    is.na(commit) ~ NA, 
+    .default = 0)) |> 
+  mutate(channel_nonstate = fct_recode(channel_nonstate, "non-State" = "1", "State" = "0"))
+
+```
+
+```{r outcome_dupes}
+
+janitor::get_dupes(outcome, purpose_code, recipient_id, year)
+```
+
+```{r iso}
+
+# outcome dataset
+outcome$iso3c <- countrycode(sourcevar = outcome[, "recipient_name"],
+                             origin = "country.name",
+                             destination = "iso3c",
+                             warn = T)
+# some values were not matched unambiguously: Kosovo, Micronesia
+outcome <- outcome |> 
+  mutate(iso3c = case_when(
+    recipient_name=="Micronesia" ~ "FSM",
+    recipient_name=="Kosovo" ~ "XXK",
+    .default = iso3c
+  ))
+```
+
+```{r}
+
+outcome <- subset(outcome,
+                  select = -recipient_id)
+```
+
+```{r outcome_summary}
+
+head(outcome)
+summary(outcome)
+```
+
+```{r}
+
+save(outcome, file = here("data", "data_outcome.RData"))
+rm(delivery_crs_code, data_oda, data_unit, unit_outcome, quantity_outcome)
+```

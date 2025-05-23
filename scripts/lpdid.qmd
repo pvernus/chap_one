@@ -1,0 +1,531 @@
+---
+title: "Untitled"
+format: docx
+editor: visual
+bibliography: references.bib
+---
+
+```{r, load_pckg, recip, include=FALSE, cache=FALSE}
+
+# read an external script
+knitr::read_chunk(here::here('scripts', 'library.R'))
+# read chunck
+source(here::here('scripts', 'library.R'))
+
+```
+
+```{r load_data}
+
+load(here("data", "202410_recip_data.RData"))
+```
+
+```{r}
+
+# note: we keep the always treated (no counter indication from Dube et al.)
+
+data_set <- merge(data, cov_region, 
+      by = c("recipient_id", "recipient_name"), 
+      all.x = TRUE)
+```
+
+# **Local projections**
+
+# Extensive margin
+
+the PMD (pre-mean differencing) version of the LP-DiD estimator, to obtain an equally-weighted ATT, is analogous to the estimator proposed by Borusyak, Jaravel, and Spiess (2021).
+
+## Point Estimates
+
+```{r}
+
+## Gourieroux, Holly, and Monfort (1982) test:
+# Null Hypothesis (H0): The pooled model (without individual and time effects) is sufficient for explaining the data.
+# Alternative Hypothesis (Ha): The inclusion of individual and/or time effects significantly improves the model fit.
+
+library(plm)
+
+plm_dummy <- data_set |> 
+  select(sector_recipient_id, year, ends_with("dummy"))
+
+plmtest(commit_dummy ~ large_dis_dummy, 
+             data=plm_dummy, 
+             effect="twoways", 
+             type="ghm")
+
+plmtest(commit_dummy ~ large_flood_dummy, 
+             data=plm_dummy, 
+             effect="twoways", 
+             type="ghm")
+
+plm <- data_set |> 
+  select(sector_recipient_id, year, commit, large_dis_dummy, large_flood_dummy)
+
+plmtest(commit ~ large_dis_dummy, 
+             data=plm, 
+             effect="twoways", 
+             type="ghm")
+
+plmtest(commit ~ large_flood_dummy, 
+             data=plm, 
+             effect="twoways", 
+             type="ghm")
+```
+
+```{r}
+
+# Perform the Wooldridge test for serial correlation in the idiosyncratic error terms, e.g., AR(1) process
+
+df <- data |> 
+  select(sector_recipient_id, year, commit_dummy, large_dummy)
+
+m <- plm::plm(commit_dummy ~ large_dummy, 
+             data=df, 
+             model="within")
+
+pbgtest(m)
+
+# result suggests that there is significant serial correlation in the idiosyncratic errors of the model.
+
+# Include clustered standard errors in the plm model
+coeftest(m, vcov. = vcovHC(m, cluster = "group"))
+
+```
+
+We start with the ***Baseline randomization*** assumption
+
+-   DGP: Two-Way Fixed Effects
+
+$$ y_{j,s,t} = α(Treatment)_{j,t} + δ_{j,s} + δ_{t} + ε_{j,s,t} $$
+
+```{r}
+
+# total
+lpdid(y = "commit_dummy", 
+      treat_status = "large_flood_dummy",
+      unit_index = "sector_recipient_id", 
+      time_index = "year",
+      nonabsorbing_lag = 3,
+      cluster	= "recipient_id",
+      df = data_set, 
+      window = c(-10, 10),
+      reweight = TRUE,
+      pooled = TRUE) -> lpdid_total_att
+
+lpdid_total_att$coeftable
+
+# state
+lpdid(y = "commit_state_dummy", 
+      treat_status = "large_flood_dummy",
+      unit_index = "sector_recipient_id", 
+      time_index = "year",
+      nonabsorbing_lag = 3,
+      cluster	= "recipient_id",
+      df = data, 
+      window = c(-10, 10),
+      reweight = TRUE,
+      pooled = TRUE) -> lpdid_state_att
+
+lpdid_state_att$coeftable
+
+# non-state
+lpdid(y = "commit_nonstate_dummy", 
+      treat_status = "large_flood_dummy",
+      unit_index = "sector_recipient_id", 
+      time_index = "year",
+      nonabsorbing_lag = 3,
+      cluster	= "recipient_id",
+      df = data, 
+      window = c(-10, 10),
+      reweight = TRUE,
+      pooled = TRUE) -> lpdid_nonstate_att
+
+lpdid_nonstate_att$coeftable
+
+```
+
+```{r}
+
+# outcome lags
+lpdid(y = "commit_nonstate_dummy", 
+      treat_status = "large_dummy",
+      unit_index = "sector_recipient_id", 
+      time_index = "year",
+      nonabsorbing_lag = 3,
+      cluster	= "recipient_id",
+      outcome_lags = 3,
+      df = data, 
+      window = c(-10, 10),
+      reweight = TRUE,
+      pooled = TRUE) -> lpdid_nonstate_lag3_att
+
+lpdid_nonstate_lag3_att$coeftable
+
+```
+
+## Event Study
+
+```{r lpdid_flood}
+
+## outcome: non-state dummy | treatment: large flood
+lpdid_state_vwatt <- lpdid(
+  y = "commit_dummy",
+  treat_status = "large_flood_dummy",
+  unit_index = "sector_recipient_id", time_index = "year",
+  controls_t = '~ csw0(i(asia, year, 0), i(africa, year, 0), i(lac, year, 0))',
+  nonabsorbing_lag = 5,
+  cluster	= "recipient_id",
+  df = data, 
+  window = c(-10, 10))
+
+# plot
+par(mar = c(4.1, 4.1, .1, 4.1))
+plot_lpdid(lpdid_state_vwatt, x.shift = -0.05, col = "dodgerblue")
+```
+
+```{r lpdid_flood_state}
+
+## outcome: non-state dummy | treatment: large flood
+lpdid_state_vwatt <- lpdid(
+  y = "commit_state_dummy", 
+  treat_status = "large_flood_dummy",
+  unit_index = "sector_recipient_id", time_index = "year",
+  controls_t = '~ csw0(i(asia, year, 0), i(africa, year, 0), i(lac, year, 0))',
+  nonabsorbing_lag = 5,
+  cluster	= "recipient_id",
+  df = data, 
+  window = c(-10, 10))
+
+# plot
+par(mar = c(4.1, 4.1, .1, 4.1))
+plot_lpdid(lpdid_state_vwatt, x.shift = -0.05, col = "dodgerblue")
+```
+
+```{r lpdid_flood_nonstate}
+
+## outcome: non-state dummy | treatment: large flood
+lpdid_nonstate_vwatt <- lpdid(
+  y = "commit_nonstate_dummy", 
+  treat_status = "large_flood_dummy",
+  unit_index = "sector_recipient_id", time_index = "year",
+  controls_t = '~ csw0(i(asia, year, 0), i(africa, year, 0), i(lac, year, 0))',
+  nonabsorbing_lag = 5,
+  cluster	= "recipient_id",
+  df = data, 
+  window = c(-10, 10))
+
+# plot
+par(mar = c(4.1, 4.1, .1, 4.1))
+plot_lpdid(lpdid_nonstate_vwatt, x.shift = -0.05, col = "dodgerblue")
+```
+
+```{r lpdid}
+
+# use pre-treatment means (period=3) rather than a single value from t-1
+lpdid(y = "commit_dummy", treat_status = "large_dummy",
+      unit_index = "sector_recipient_id", time_index = "year",
+      nonabsorbing_lag = 5,
+      cluster	= "recipient_id",
+      pmd = TRUE,
+      pmd_lag = 3,
+      df = data, 
+      window = c(-10, 10)) -> lpdid_total_vwatt_pmd3
+
+# ATT
+lpdid(y = "commit_dummy", treat_status = "large_dummy",
+      unit_index = "sector_recipient_id", time_index = "year",
+      nonabsorbing_lag = 5,
+      cluster	= "recipient_id",
+      df = data, 
+      window = c(-10, 10),
+      reweight = TRUE) -> lpdid_total_att
+
+## LP-DID + Y_lag
+# outcome_lags = 1
+# composition_correction
+
+# placebo test with never-treated units --> model misspecification
+```
+
+```{r}
+
+```
+
+## Heterogenous Treatment Effects
+
+### Humanitarian
+
+```{r hum}
+
+# define sample
+hum_data <- drop_data |> 
+  select(sector_id, recipient_id, year,
+         commit_dummy, commit_state_dummy, commit_nonstate_dummy,
+         large_dummy) |> 
+# create new dummy variable  
+  mutate(humanitarian = ifelse(grepl("^07", sector_id), 1, 0)) |> 
+  panel(~ sector_id^recipient_id + year)
+
+```
+
+### Sectors
+
+```{r sector}
+
+# define sample
+sect_data <- drop_data |> 
+  select(sector_id, recipient_id, year,
+         commit_dummy, commit_state_dummy, commit_nonstate_dummy,
+         large_dummy) |> 
+# create new dummy variable  
+  mutate(
+    social = ifelse(grepl("^01", sector_id), 1, 0),
+    economic = ifelse(grepl("^02", sector_id), 1, 0),
+    production = ifelse(grepl("^03", sector_id), 1, 0),
+    budget = ifelse(grepl("^051", sector_id), 1, 0)
+    ) |> 
+  panel(~ sector_id^recipient_id + year)
+
+```
+
+### Income groups
+
+```{r inc_gp}
+
+# define sample
+incgp_data <- drop_data |> 
+  select(sector_id, iso3c, recipient_id, year,
+         commit_dummy, commit_state_dummy, commit_nonstate_dummy,
+         large_dummy) |> 
+  left_join(cov_incgp, by = c("iso3c", "year")) |> 
+  mutate(low_inc = ifelse(inc_gp == "L", 1, 0),
+         high_inc = ifelse(inc_gp == "H", 1, 0))
+
+```
+
+### Regions
+
+```{r region}
+
+# define sample
+reg_data <- drop_data |> 
+  select(sector_id, iso3c, recipient_id, year,
+         commit_dummy, commit_state_dummy, commit_nonstate_dummy,
+         large_dummy) |> 
+  left_join(cov_region, by = "recipient_id") |> 
+  mutate(
+    africa = ifelse(grepl("Sahara", region_name), 1, 0),
+    ssa = ifelse(region_name == "South of Sahara", 1, 0),
+    asia = ifelse(grepl("Asia", region_name), 1, 0)
+    )
+
+```
+
+### Dynamic Treatment Effects
+
+```{r lp_lin_panel}
+
+## Total
+
+df <- data |> 
+  select(sector_recipient_id, year, commit_dummy, large_dummy)
+
+lp_total <- lpirfs::lp_lin_panel(data_set = df,
+ endog_data = "commit_dummy",
+ cumul_mult = TRUE,
+ shock = "large_dummy",
+ panel_model = "within",
+ panel_effect = "individual",
+ robust_cov = "vcovHC",
+ robust_cluster = "group",
+ confint = 1.67,
+ hor = 10)
+
+# Plot irfs
+plot(lp_total)
+
+## State
+
+df <- data |> 
+  select(sector_recipient_id, year, commit_state_dummy, large_dummy)
+
+lp_state <- lpirfs::lp_lin_panel(data_set = df,
+ endog_data = "commit_state_dummy",
+ cumul_mult = TRUE,
+ shock = "large_dummy",
+ panel_model = "within",
+ panel_effect = "individual",
+ robust_cov = "vcovHC",
+ robust_cluster = "group",
+ confint = 1.67,
+ hor = 10)
+
+# Plot irfs
+plot(lp_state)
+
+## non-State
+
+df <- data |> 
+  select(sector_recipient_id, year, commit_nonstate_dummy, large_dummy)
+
+## Estimate panel model
+lp_nonstate <- lpirfs::lp_lin_panel(data_set = df,
+ endog_data = "commit_nonstate_dummy",
+# cumul_mult = TRUE,
+ shock = "large_dummy",
+# diff_shock = TRUE,
+ panel_model = "within",
+ panel_effect = "individual",
+ robust_cov = "vcovHC",
+ robust_cluster = "group",
+ confint = 1.67,
+ hor = 10)
+
+# Plot irfs
+plot(lp_nonstate)
+
+# use_gmm
+# gmm_model
+# gmm_effect
+# gmm_transformation
+
+```
+
+-code untreated obs. closing the time window = 0
+
+-code observations that starts with treated status = NA
+
+-replace missingness in Time_to_Treatment with an arbitrary number
+
+-define treatment window –\> binning
+
+```{r twfe_dyn_treat}
+
+## Generate a dummy variable treat 
+
+# not treated as default value
+cohort_data$treat <- 0
+# treated units = 1
+cohort_data[which(cohort_data$Cohort!='Control'), 'treat'] <- 1 
+# among treated units, untreated obs. closing the time window = 0 
+cohort_data[which(is.na(cohort_data$Time_to_Treatment)), "treat"] <- 0  
+
+## remove observations that starts with treated status 
+remove <- intersect(which(is.na(cohort_data$Time_to_Treatment)),                      which(cohort_data[, 'large_dummy']==1))  
+if(length(remove)>0){cohort_data <- cohort_data[-remove,]}
+
+# Note: observations w/ NAs are untreated obs. closing the time window and treated obs. opening the time window. Here, the second condition (treated obs) filter only the latter.  
+
+# replace missingness in Time_to_Treatment with an arbitrary number 
+cohort_data[which(is.na(cohort_data$Time_to_Treatment)), "Time_to_Treatment"] <- 999 
+
+```
+
+```{r twfe_dyn_binning}
+
+## define treatment window 
+
+# compute the number of treated observations in each relative period 
+# convert to a proportion of the largest number of treated observations in a period # define a threshold, e.g., proportion = 0.3 (following 'fect' R package) 
+cohort_data |>    
+  janitor::tabyl(Time_to_Treatment, treat) |>    
+  mutate(proportion = `1` / max(`1`))  
+
+## Binning: treatment window [-4;1] 
+twfe.es_data <- cohort_data |>    
+  mutate(binning_time = case_when(
+    Time_to_Treatment <= -5 ~ -5,     
+    Time_to_Treatment >= 2 & Time_to_Treatment != 999 ~ 2,     
+    .default = Time_to_Treatment   
+    ))
+
+```
+
+```{r lpdid}
+
+# we keep the always treated
+
+# VWATT
+lpdid(y = "commit_dummy", treat_status = "large_dummy",
+      unit_index = "sector_recipient_id", time_index = "year",
+      nonabsorbing_lag = 5,
+      cluster	= "recipient_id",
+      df = data, 
+      window = c(-10, 10)) -> lpdid_total_vwatt
+
+lpdid(y = "commit_state_dummy", treat_status = "large_dummy",
+      unit_index = "sector_recipient_id", time_index = "year",
+      nonabsorbing_lag = 5,
+      cluster	= "recipient_id",
+      df = data, 
+      window = c(-10, 10)) -> lpdid_state_vwatt
+
+lpdid(y = "commit_nonstate_dummy", treat_status = "large_dummy",
+      unit_index = "sector_recipient_id", time_index = "year",
+      nonabsorbing_lag = 5,
+      cluster	= "recipient_id",
+      df = data, 
+      window = c(-10, 10)) -> lpdid_nonstate_vwatt
+
+# use pre-treatment means (period=3) rather than a single value from t-1
+lpdid(y = "commit_dummy", treat_status = "large_dummy",
+      unit_index = "sector_recipient_id", time_index = "year",
+      nonabsorbing_lag = 5,
+      cluster	= "recipient_id",
+      pmd = TRUE,
+      pmd_lag = 3,
+      df = data, 
+      window = c(-10, 10)) -> lpdid_total_vwatt_pmd3
+
+# ATT
+lpdid(y = "commit_dummy", treat_status = "large_dummy",
+      unit_index = "sector_recipient_id", time_index = "year",
+      nonabsorbing_lag = 5,
+      cluster	= "recipient_id",
+      df = data, 
+      window = c(-10, 10),
+      reweight = TRUE) -> lpdid_total_att
+
+## LP-DID + Y_lag
+# outcome_lags = 1
+# composition_correction
+
+# placebo test with never-treated units --> model misspecification
+```
+
+```{r}
+
+par(mar = c(4.1, 4.1, .1, 4.1))
+plot_lpdid(lpdid_total_vwatt, x.shift = -0.05, col = "lightblue")
+plot_lpdid(lpdid_nonstate_vwatt, x.shift = 0.05, col = "blue", add = T)
+abline(h = mean(c(15, 15, 35)), lty = 2)
+legend("topleft", legend = c("VWATT Total", "VWATT State"), bty = "n",
+       col = c("lightblue", "blue"), pch = 19)
+
+```
+
+```{r}
+
+## Pre-Means Differencing (pmd)
+
+# VWATT
+lpdid(y = "commit_dummy", 
+      treat_status = "large_dummy",
+      unit_index = "sector_recipient_id", 
+      time_index = "year",
+      nonabsorbing_lag = 5,
+      pmd = TRUE,
+      pmd_lag = 3,
+      cluster	= "recipient_id",
+      df = data, 
+      window = c(-10, 10)) -> lpdid_total_pmd
+
+# plot
+par(mar = c(4.1, 4.1, .1, 4.1))
+plot_lpdid(lpdid_total_pmd, x.shift = -0.05, col = "dodgerblue")
+```
+
+#### Additional specifications
+
+##### Unit-specific linear time-trends
+
+##### Lagged Dependent Variable

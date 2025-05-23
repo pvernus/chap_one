@@ -1,0 +1,279 @@
+---
+title: "clean_oecd_crs_data"
+format: html
+editor: visual
+---
+
+```{r load_packages}
+source(here::here('scripts', 'library.R'))
+```
+
+# Data import
+
+Data is extracted from the OECD platform as text files. There is one text file per year between 2002 and 2022, except for 2002-03 and 2004-05. There are 19 files in total.
+
+```{r import_data}
+
+# create path to folder w/ raw data
+folder_path <- here('source', 'outcome', 'crs')
+# create list of all files included in the folder
+file_list <- list.files(path = folder_path, full.names = TRUE, pattern = '^CRS 2')
+# create function to read the csv files
+read_clean_and_process <- function(file_path) {
+  data <- fread(file_path) |> 
+    janitor::clean_names() |> # clean variable names
+    mutate_if(is.character, str_trim) # delete white space before/after text
+  
+  return(data)
+}
+
+# apply ad hoc function on all listed csv files in the folder
+data_list <- lapply(file_list, read_clean_and_process)
+# create a data.table
+data_combined <- data.table::rbindlist(data_list, fill = T)
+```
+
+# Data treatment
+
+```{r data_short}
+
+data_short <- data_combined |> 
+  dplyr::select(1:26, 39, 44:54, 57:59, 62:67, 74:77, 78) |> # dplyr::select relevant vars
+  mutate_if(is.character, str_trim) # delete white space before/after text
+
+```
+
+# Data cleaning
+
+## Calibrated sample
+
+We reduce the sample to projects with the following characteristics:
+
+**Nature of submission**
+
+-   **Remove**: (2) Revision, (5) Provisional data, (9) Net disbursements.
+-   **Keep**: (1) New activity reported, (3) Previously reported activity (increase/decrease of earlier commitment, disbursement on earlier commitment), (8) Commitment derived from Disbursement, and NAs.
+
+**Cooperation modalities**
+
+-   **Remove**: project observations in provider countries e.g. (E) Scholarships and student costs in donor countries, (F) Debt Relief, (G) Administrative costs not included elsewhere, and (H) Other in-donor expenditures.
+-   **Keep**: (A) Budget support, (B) Core contributions and pooled programmes and funds, (C) Project-type interventions, (D) Experts and other technical assistance.
+
+**Recipient**: remove non-specified country/region.
+
+**Funding**:
+
+-   Remove: (i) observations with missing/null value for both commitment or disbursement variables; (ii) non-concessional official & private flows.
+
+-   Keep: grants and loans ODA.
+
+> *Question: include "received" funds when no commitment and disbursement?*
+
+```{r data_clean}
+
+setDT(data_short)
+
+data_calibrated <- copy(data_short)
+data_calibrated <- data_calibrated[!initial_report %in% c(2,5,9), 
+][!grepl("^[EFGH].*", aid_t) | !grepl("^(6|9)", purpose_code), 
+][!grepl('unspecified', recipient_name), 
+][(!is.na(usd_commitment_defl) & !is.na(usd_disbursement_defl)) | (!is.na(usd_commitment_defl) & usd_disbursement_defl != 0) | (usd_commitment_defl != 0 & !is.na(usd_disbursement_defl)) | (!usd_commitment_defl != 0 & !usd_disbursement_defl != 0)
+][flow_code %in% c(11, 13),]
+```
+
+Besides, duplicates are removed.
+
+```{r data_clean_duplicated}
+
+# data_clean[duplicated(data_clean)|duplicated(data_clean, fromLast = TRUE),]
+data_calibrated <- unique(data_calibrated)
+
+```
+
+```{r}
+# save 
+save(data_list, data_combined, data_calibrated,
+     file = here('data', 'data_oecd_crs_raw.RData'))
+# remove
+rm(file_list, data_list, data_combined, data_short)
+```
+
+## Channel of delivery
+
+### Level consistency
+
+The OECD uses a three-level hierarchical typology for channels of delivery.
+
+Depending of the channel category, the third level includes either the *type* of agency (ex: Pension Funds in Private sector in provider country) or the *name* of a specific agency (ex: African Development Bank in Regional Development Bank).
+
+The name of the agency can also be added manually by the provider, but reporting is inconsistent and reported agencies aren't always included in the OECD's list of ODA-eligible international organisations.
+
+#### Table: Example with the Donor Government group category.
+
+| Code | Level 1 | Code | Level 2 | Code | Level 3 | Reported name |
+|-----------|-----------|-----------|-----------|-----------|-----------|-----------|
+| 10000 | Public Sector Institutions | 11000 | Donor Government | 11001 | Central Government | Ex: Ministry Of Employment And Labor, The U.S Department Of Homeland Security, Miscellaneous Suppliers, etc. |
+|  |  |  |  | 11002 | Local Government | Ex: Comune Di Reggio Emilia, Local Government, Busan Metropolitan City, etc. |
+|  |  |  |  | 11003 | Public corporations | Ex: The Export-Import Bank Of Korea, Kfw, Public Corporations, etc. |
+|  |  |  |  | 11004 | Other public entities in donor country | Ex: University Of Trento, Korea Rural Economic Institute, King Salman For Relief And Humanitarian Aid Center |
+
+There are two variables with codes for channel of delivery: `channel_parent_category` (level 1) and `channel_code` (levels 2 and 3).
+
+To help the analysis, create a unique code variable using the most granular level when both `channel_parent_category` and `channel_code` are provided.
+
+```{r unique_channel_code_typology}
+
+data_channel <- copy(data_calibrated)
+
+# rename names and observations of vars related to the channel of delivery
+data_channel.channel_parent_code <- data_channel |> 
+  rename(channel_parent_code = parent_channel_code) |> 
+  mutate(across(starts_with("channel") & ends_with('name'), 
+                ~ na_if( # replace "" by NA
+                  str_squish( # delete space before/after character string
+                  str_to_title(.x)),"")))  # harmonize style
+
+# create new variable
+data_channel.code_unique <- copy(data_channel.channel_parent_code)
+data_channel.code_unique <- data_channel.code_unique[, 
+  channel_code_unique := fifelse(
+    rowSums(!is.na(.SD)) == 2,
+    do.call(pmax, c(.SD, na.rm = TRUE)),
+    NA_real_
+  ), 
+  .SDcols = c("channel_code", "channel_parent_code")
+]
+# relocate vars related to the channel of delivery
+data_channel.code_unique <- as_tibble(data_channel.code_unique) |> 
+  relocate(c(channel_parent_code, channel_code, channel_code_unique, channel_name, channel_reported_name), 
+           .after = sector_name)
+
+setDT(data_channel.code_unique)
+
+rm(data_calibrated, data_channel.channel_parent_code)
+```
+
+Also, create a variable `channel_level` to specify the level of the most disaggregated channel available.
+
+```{r channel_level}
+
+# create new variable
+data_channel.channel_level <- copy(data_channel.code_unique)
+data_channel.channel_level <- data_channel.channel_level |> 
+  mutate(channel_level = case_when(
+    str_sub(channel_code_unique, -3) == "0000" | channel_code_unique == 51000 ~ 1,
+    str_sub(channel_code_unique, -3) == "000" ~ 2,
+    str_sub(channel_code_unique, -1) != 0 ~ 3,
+  )) |> 
+  relocate(channel_level, .before = channel_parent_code)
+
+data_channel <- copy(data_channel.channel_level)
+rm(data_channel.code_unique, data_channel.channel_level)
+
+# sample
+data_channel |> 
+  dplyr::select(channel_level, channel_parent_code, channel_code_unique, channel_name) |> 
+  filter(!is.na((channel_level))) |> 
+  slice_sample(n = 2, by = channel_level) |> 
+  head(3) |> 
+  gt()
+```
+
+### Time consistency
+
+The channel of delivery became an *optional* reporting item on the new CRS++ reporting scheme in 2004 ([@dietrich2013]).
+
+Information on delivery channels has been added and updated over time. Similarly, new implementing agencies have also been added, while others have seen there name and/or channel code revised. So implementing agencies may be coded and/or described differently across time and space within the dataset.
+
+For consistency, I apply the latest code and name list provided by the OECD (last updated in July 2023)[^1].
+
+[^1]: The Excel file can be found [here](https://www.oecd.org/dac/financing-sustainable-development/development-finance-standards/dacandcrscodelists.htm).
+
+```{r delivery_crs_code}
+
+# import info from the crs code list
+delivery_crs_code <- data.table(read_xlsx(here("docs", "OECD-ODA-Single-Table-2024-for-2023-flows.xlsx"),
+  sheet = "January 2024 table",
+  skip = 6
+) |>
+  clean_names() |>
+  mutate_if(is.character, 
+    .funs = ~ str_squish(str_to_title(.))
+  )) |>
+  dplyr::select(channel_parent_code_2024 = channel_parent_category, 
+         channel_code_2024 = channel_id, 
+         channel_name_2024 = full_name_english)
+
+# merge w/ data set
+data_channel.delivery_crs_code <- left_join(data_channel, delivery_crs_code,
+                           by = c('channel_code_unique' = 'channel_code_2024')) |>
+  relocate(channel_parent_code_2024, .after = channel_parent_code) |> 
+  relocate(channel_name_2024, .after = channel_name)
+
+```
+
+## Typology
+
+```{r vars bi_multi}
+data_channel <- copy(data_channel.delivery_crs_code)
+rm(data_channel.delivery_crs_code)
+
+data_channel <- data_channel |> 
+  mutate( # new provider variable bilateral/multilateral/private sector
+    bi_multi = case_when(
+      bi_multi %in% c(1, 2, 3, 7, 8) ~ 'Bilateral',
+      bi_multi == 4 ~ 'Multilateral',
+      bi_multi == 6 ~ 'Private Sector'
+    )
+  )
+```
+
+```{r vars channel_bypass}
+
+data_channel <- data_channel |> 
+  mutate(
+    channel_nonstate = if_else(channel_parent_code_2024 %in% c(20000:63000), 1, 0),
+    channel_nonstate_ngo = if_else(channel_parent_code_2024 %in% c(20000:23000), 1, 0),
+    channel_nonstate_multi = if_else(channel_parent_code_2024 %in% c(40000:47000), 1, 0),
+    channel_nonstate_private = if_else(channel_parent_code_2024 %in% c(60000:63000), 1, 0),
+    channel_other = if_else(channel_parent_code_2024 == 90000, 1, 0)
+  ) |> 
+  relocate(starts_with('channel_bypass'), .after = channel_name_2024)
+
+```
+
+```{r}
+
+data_channel |> 
+  mutate(channel_multin = case_when(
+    channel_parent_code_2024 < 20000 ~ "Public sector",
+    channel_parent_code_2024 %in% c(20000:23000) ~ "NGOs and Civil society",
+    channel_parent_code_2024 %in% c(40000:47000) ~ "Multilaterals",
+    channel_parent_code_2024 %in% c(60000:63000) ~ "Private sector",
+    .default = "Other"
+  ))
+
+```
+
+
+```{r vars coop_modalities}
+
+data_channel <- data_channel |> 
+  mutate(flow_modality = fct(case_when(
+    aid_t %in% c('A01', 'A02') ~ "Budget support",
+    aid_t %in% c('B01') ~ "Core contributions",
+    aid_t %in% c('B03', 'B031', 'B032', 'B033') ~ "Contributions to specific-purpose programmes/funds",
+    aid_t %in% c('B04') ~ "Basket funds/pooled funding",
+    aid_t %in% c('C01') ~ "Project-type interventions",
+    aid_t %in% c('D01') ~ "Donor country personnel",
+    aid_t %in% c('D02') ~ "Other technical assistance",
+  ))) |> 
+  relocate(flow_modality, .after = aid_t)
+```
+
+```{r}
+save(data_channel, delivery_crs_code, file = here("data", "data_oecd_crs_clean.RData"))
+rm(data_channel)
+```
+
+> To be completed (cleaning of values in channel variables)...

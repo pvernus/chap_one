@@ -1,0 +1,388 @@
+---
+title: "Untitled"
+format: html
+editor: visual
+---
+
+```{r, load_pckg}
+
+source(here::here('scripts', 'library.R'))
+```
+
+```{r load_data}
+
+load(here("data", "data_sample.RData"))
+load(here("data", "data_covariate.RData"))
+```
+
+# Country-year
+
+## Set-up
+
+```{r sample}
+
+# define sample
+data <- data_sample_iso
+
+# Constructs a fixest panel data base
+data = panel(data, ~iso3c+year)
+
+```
+
+```{r outcome}
+
+# log-transformation outcome
+data$log_Y <- log(data$Y + .001)
+```
+
+```{r covariates}
+
+data <- left_join(data, data_covariate, by = c("iso3c", "year"))
+```
+
+## Staggered treatments
+
+```{r}
+
+# binary staggered 'first treatment' treatment status 
+treat.vars.first <- c("D_HeLs_first", "D_HeHs_first", "D_LeLs_first", "D_LeHs_first")
+```
+
+```{r}
+
+# country-year level
+# Log-Y
+# D_HeHs
+
+# Staggered binary "first treatment"
+stag_first_res <- lpdid(df = data, window = c(-10, 10),
+    y = "log_Y",
+    treat_status = "D_HeHs_first",
+    unit_index = "iso3c", time_index = "year",
+    cluster	= "iso3c"
+    )  
+
+# Non-absorbing binary treatment (w/out Y_lag)
+nabs_res <- lpdid(df = data, window = c(-10, 10),
+    y = "log_Y",
+    treat_status = "D_HeHs",
+    unit_index = "iso3c", time_index = "year",
+    nonabsorbing_lag = 5,
+    cluster	= "iso3c"
+    )  
+
+# Non-absorbing binary treatment (w/ Y_lag)
+nabs_res_l <- lpdid(df = data, window = c(-10, 10),
+    y = "log_Y",
+    treat_status = "D_HeHs",
+    outcome_lags = 1,
+    unit_index = "iso3c", time_index = "year",
+    nonabsorbing_lag = 5,
+    cluster	= "iso3c"
+    ) 
+  
+plot_lpdid(stag_first_res, x.shift = -0.1, col = "dodgerblue")
+plot_lpdid(nabs_res, x.shift = 0.1, col = "tomato", add = T)
+plot_lpdid(nabs_res_l, x.shift = 0.2, col = "orange", add = T)
+
+abline(h = mean(c(15, 15, 35)), lty = 2)
+legend("bottomleft", 
+       legend = c("Staggered binary first treatment", 
+                  "Non-absorbing binary treatment (K=5)",
+                  "Non-absorbing binary treatment (K=5) + Y_lag"
+                  ), 
+       bty = "n",
+       col = c("dodgerblue", "tomato", "orange"), pch = 19)
+```
+
+## Non-absorbing treatment
+
+```{r nonabs_lags}
+
+res_1 <- lpdid(df = data, window = c(-7, 10),
+    y = "log_Y",
+    treat_status = "D_HeHs",
+    unit_index = "iso3c", time_index = "year",
+    outcome_lags = 1,
+    nonabsorbing_lag = 1,
+    cluster	= "iso3c"
+    )
+    
+res_3 <- lpdid(df = data, window = c(-7, 10),
+    y = "log_Y",
+    treat_status = "D_HeHs",
+    unit_index = "iso3c", time_index = "year",
+    outcome_lags = 1,
+    nonabsorbing_lag = 3,
+    cluster	= "iso3c"
+    )
+
+res_5 <- lpdid(df = data, window = c(-7, 10),
+    y = "log_Y",
+    treat_status = "D_HeHs",
+    unit_index = "iso3c", time_index = "year",
+    outcome_lags = 1,
+    nonabsorbing_lag = 5,
+    cluster	= "iso3c"
+    )
+
+plot_lpdid(res_1, x.shift = -0.1, col = "dodgerblue", main = "Non-absorbing lags")
+plot_lpdid(res_3, x.shift = 0, col = "tomato", add = T)
+plot_lpdid(res_5, x.shift = 0.1, col = "darkgreen", add = T)
+
+abline(h = mean(c(15, 15, 35)), lty = 2)
+legend("topleft", legend = c("K=1", "K=3", "K=5"), bty = "n",
+       col = c("dodgerblue", "tomato", "darkgreen"), pch = 19)
+```
+
+## Treatment type
+
+```{r}
+
+map(treat_list, \(x) {
+  
+  res <- lpdid(df = data, window = c(-5, 10),
+    y = "log_Y",
+    treat_status = x,
+    unit_index = "iso3c", time_index = "year",
+    outcome_lags = 1,
+    nonabsorbing_lag = 5,
+    cluster	= "iso3c"
+    )
+
+  plot_lpdid(res, x.shift = -0.05, col = "dodgerblue", main = x)
+
+})
+
+```
+
+## Fixed effects
+
+```{r}
+
+FEs <- list(
+  ~ 1,
+  ~ 1 | region_agg^year,
+  ~ 1 | region_code^year,
+  ~ 1 | region_code^year + iso3c[[t]]
+)
+```
+
+```{r}
+
+map(FEs, \(x) {
+
+    res_lpdid <- lpdid(df = data, window = c(-5, 10),
+    y = "log_Y",
+    treat_status = "D_HeHs",
+    unit_index = "iso3c", time_index = "year",
+    controls = x,
+    outcome_lags = 1,
+    nonabsorbing_lag = 5,
+    cluster	= "iso3c"
+    )
+    
+    titles <- as.character(x)
+    
+    plot_lpdid(res_lpdid, x.shift = -0.05, col = "dodgerblue",
+                       main = titles)
+})
+```
+
+## Covariates
+
+```{r}
+
+covariates_t <- list(
+  ~ sto_dummy,
+  ~ storm,
+  ~ storm + gdp,
+  ~ storm + gdp.pc + pop
+)
+```
+
+```{r}
+
+map(covariates_t, \(x) {
+
+    res_lpdid <- lpdid(df = data, window = c(-5, 10),
+    y = "log_Y",
+    treat_status = "D_HeHs",
+    unit_index = "iso3c", time_index = "year",
+    controls_t = x,
+    outcome_lags = 1,
+    nonabsorbing_lag = 5,
+    cluster	= "iso3c"
+    )
+    
+    titles <- sub("^~", "", as.character(x))
+    
+    plot_lpdid(res_lpdid, x.shift = -0.05, col = "dodgerblue",
+                       main = titles)
+})
+```
+
+# Category-country-year
+
+```{r}
+
+# sample
+data <- data_sample_iso_cat |> 
+  mutate(
+    cat = case_when(
+      category == "Development" ~ "dev",
+      category == "Gov. & Peace" ~ "gov",
+      category == "Budgetary" ~ "budg",
+      category == "Humanitarian" ~ "hum"
+    ),
+    iso_cat = paste0(iso3c, "_", cat)) |> 
+  relocate(iso_cat, .after = category)
+
+# Constructs a fixest panel data base
+data = panel(data, ~iso_cat+year)
+
+```
+
+```{r}
+
+# outcome
+data$log_Y <- log(data$Y + .001)
+```
+
+```{r}
+
+# list categories
+categories  <- list("Development", "Gov. & Peace", "Budgetary", "Humanitarian")
+```
+
+## Unique sample
+
+```{r}
+
+map(treat_list, \(x) {
+  
+  res <- lpdid(df = data, window = c(-5, 10),
+    y = "log_Y",
+    treat_status = x,
+    unit_index = "iso_cat", time_index = "year",
+    outcome_lags = 1,
+    nonabsorbing_lag = 5,
+    cluster	= "iso3c"
+    )
+
+  plot_lpdid(res, x.shift = -0.05, col = "dodgerblue", main = x)
+  
+})
+```
+
+## Split sample
+
+```{r}
+
+map(categories, \(x) {
+  
+  res <- lpdid(df = data[data$category==x, ], window = c(-5, 10),
+    y = "log_Y",
+    treat_status = "D_HeHs",
+    unit_index = "iso_cat", time_index = "year",
+    outcome_lags = 1,
+    nonabsorbing_lag = 5,
+    cluster	= "iso3c"
+    )
+
+  plot_lpdid(res, x.shift = -0.05, col = "dodgerblue", main = x)
+  
+})
+```
+
+# Sector-country-year
+
+```{r}
+
+# sample
+data <- data_sample_sect
+
+# Constructs a fixest panel data base
+data = panel(data, ~iso_sect_id+year)
+
+# outcome
+data$log_Y <- log(data$commit + .001)
+```
+
+## Binary outcome (extensive margin)
+
+```{r}
+
+# Binary outcome (Y > 0)
+res_1 <- lpdid(df = data, window = c(-5, 10),
+    y = "commit_dummy",
+    treat_status = "D_HeHs",
+    unit_index = "iso_sect_id", time_index = "year",
+    outcome_lags = 1,
+    nonabsorbing_lag = 1,
+    cluster	= "iso3c"
+    )
+
+res_3 <- lpdid(df = data, window = c(-5, 10),
+    y = "commit_dummy",
+    treat_status = "D_HeHs",
+    unit_index = "iso_sect_id", time_index = "year",
+    outcome_lags = 1,
+    nonabsorbing_lag = 3,
+    cluster	= "iso3c"
+    )
+
+res_5 <- lpdid(df = data, window = c(-5, 10),
+    y = "commit_dummy",
+    treat_status = "D_HeHs",
+    unit_index = "iso_sect_id", time_index = "year",
+    outcome_lags = 1,
+    nonabsorbing_lag = 5,
+    cluster	= "iso3c"
+    )
+
+plot_lpdid(res_1, x.shift = -0.1, col = "dodgerblue", main = "Non-absorbing lags")
+plot_lpdid(res_3, x.shift = 0, col = "tomato", add = T)
+plot_lpdid(res_5, x.shift = 0.1, col = "darkgreen", add = T)
+
+abline(h = mean(c(15, 15, 35)), lty = 2)
+legend("topleft", legend = c("K=1", "K=3", "K=5"), bty = "n",
+       col = c("dodgerblue", "tomato", "darkgreen"), pch = 19)
+```
+
+## Log-transformed outcome
+
+```{r}
+
+res <- lpdid(df = data, window = c(-5, 10),
+    y = "log_Y",
+    treat_status = "D_HeHs",
+    unit_index = "iso_sect_id", time_index = "year",
+    outcome_lags = 1,
+    nonabsorbing_lag = 5,
+    cluster	= "iso3c"
+    )
+
+plot_lpdid(res, x.shift = -0.05, col = "dodgerblue")
+
+```
+
+## Split sample
+
+```{r}
+
+map(categories, \(x) {
+  
+  res <- lpdid(df = data[data$category==x, ], window = c(-5, 10),
+    y = "log_Y",
+    treat_status = "D_HeHs",
+    unit_index = "iso_sect_id", time_index = "year",
+    outcome_lags = 1,
+    nonabsorbing_lag = 5,
+    cluster	= "iso3c"
+    )
+
+  plot_lpdid(res, x.shift = -0.05, col = "dodgerblue", main = x)
+  
+})
+```

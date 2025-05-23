@@ -1,0 +1,955 @@
+---
+title: "Untitled"
+format: html
+editor: visual
+---
+
+```{r, load_pckg}
+
+source(here::here('scripts', 'library.R'))
+```
+
+```{r load_data}
+
+load(here("data", "data_sample.RData"))
+
+```
+
+# Model
+
+# Data
+
+Unit: Country \| Time: Year
+
+```{r data}
+
+data <- data_sample_iso |> 
+  # observation window 2003:2018
+  filter(year %in% c(2003:2018))
+
+## log-transformation
+
+# outcome
+data$log_Y <- log(data$Y + .001)
+
+# pre-treatment characteristics
+data$log_pop_2003 <- log(data$pop_2003)
+data$log_pop_0307 <- log(data$pop_0307)
+
+data$log_gdp_2003 <- log(data$gdp_2003)
+data$log_gdp.pc_2003 <- log(data$gdp.pc_2003)
+
+```
+
+```{r}
+
+## label new variables
+
+labelled::var_label(data) <- list(
+  log_Y = "ODA commitments, constant 2021 USD (log)",
+  log_pop_2003 = "Population in 2003, total (log)",
+  pop_0307 = "Change in population 2003-07, total",
+  log_gdp_2003 = "GDP in 2003, PPP, constant 2021 international USD (log)",
+  gdp_0307 = "Change in GDP 2003-07, PPP, constant 2021 international USD",
+  log_gdp.pc_2003 = "GDP per capita in 2003, PPP, constant 2021 international USD (log)",
+  gdp.pc_0307 = "Change in GDP per capita 2003-07, PPP, constant 2021 international USD",
+  storm_0307	= "Number of storms over the 2003-07 period",
+  drought_0307 = "Number of droughts over the 2003-07 period",
+  region_agg = "Region",
+  inc_gp_03 = "Income group, 2003",
+  inc_gp_07 = "Income group, 2007"
+)
+```
+
+# No Treatment Reversals
+
+## Visualizing Data
+
+```{r}
+
+# Binary high exposure|severity treatment
+panelview(1 ~ D_H,                   
+            main = "High exposure and/or severity event",          
+            by.timing = TRUE,                   
+            collapse.history = TRUE,
+            pre.post = TRUE,
+            data = data,                   
+            index = c("iso3c", "year"))
+
+
+# Binary staggered 'first' high exposure|severity treatment
+panelview(1 ~ D_H_first,                   
+            main = "Staggered 'first' high exposure|severity treatment",          
+            by.timing = TRUE,                   
+            collapse.history = TRUE,
+            pre.post = TRUE,
+            data = data,                   
+            index = c("iso3c", "year"))
+
+# binary staggered 'first treatment' treatment status 
+treat.vars.first <- c("D_HeLs_first", "D_HeHs_first", "D_LeHs_first")
+
+panel.bin <- treat.vars.first |>      
+  map(~ panelview(as.formula(paste("1 ~", .x)),                   
+                  main = .x,                   
+                  by.timing = TRUE,                   
+                  collapse.history = TRUE,
+                  pre.post = TRUE,
+                  data = data,                   
+                  index = c("iso3c", "year")))
+
+```
+
+```{r}
+
+## Relative treatment histories: 
+# D_H_first
+data |> 
+  dplyr::select(iso3c, year, cohort_D_H, D_H_first) |> 
+  mutate(rel_time = ifelse(cohort_D_H != 9999, year - cohort_D_H, NA)) |> 
+  filter(rel_time %in% c(-5:5)) |> 
+  panelview(1 ~ D_H_first,
+            by.timing = TRUE,                   
+            collapse.history = TRUE,
+            pre.post = TRUE,
+            main = "Unique Treatment Histories: D_H_first",
+            index = c("iso3c", "rel_time"))
+
+# D_He_first
+data |> 
+  dplyr::select(iso3c, year, cohort_D_He, D_He_first) |> 
+  mutate(rel_time = ifelse(cohort_D_He != 9999, year - cohort_D_He, NA)) |> 
+  filter(rel_time %in% c(-5:5)) |> 
+  panelview(1 ~ D_He_first,
+            by.timing = TRUE,                   
+            collapse.history = TRUE,
+            pre.post = TRUE,
+            main = "Unique Treatment Histories: D_He_first",
+            index = c("iso3c", "rel_time"))
+
+# D_Hs_first
+data |> 
+  dplyr::select(iso3c, year, cohort_D_Hs, D_Hs_first) |> 
+  mutate(rel_time = ifelse(cohort_D_Hs != 9999, year - cohort_D_Hs, NA)) |> 
+  filter(rel_time %in% c(-5:5)) |> 
+  panelview(1 ~ D_Hs_first,
+            by.timing = TRUE,                   
+            collapse.history = TRUE,
+            pre.post = TRUE,
+            main = "Unique Treatment Histories: D_Hs_first",
+            index = c("iso3c", "rel_time"))
+```
+
+# Linear models
+
+## TWFE log-OLS
+
+```{r}
+
+# List of treatment variables
+treat.vars.first <- c("D_H_first", "D_He_first", "D_Hs_first")
+
+# Iterate over each treatment variable
+for (treat_var in treat.vars.first) {
+  # Drop always treated units
+  df.h <- as.data.frame(data |>
+                          group_by(iso3c) |>
+                          mutate(treatment_mean = mean(!!sym(treat_var), na.rm = TRUE)))
+  df.h.feols <- df.h[which(df.h$treatment_mean < 1), ]
+
+# Baseline specification w/ sub-sample (only 'ever-treated' units)
+  formula <- as.formula(paste("log_Y ~", treat_var, "| iso3c[t] + region_agg^year + iso3c + year"))
+  res_ever_H <- feols(formula,
+                      data = df.h.feols,
+                      cluster = "iso3c")
+
+  # Dynamic TWFE
+  es.h.feols <- fect::get.cohort(df.h.feols, D = treat_var,
+                                  index = c("iso3c", "year"))
+
+  # Drop always treated units
+  es.h.feols$treat <- as.numeric(es.h.feols$treatment_mean > 0)
+  es.h.feols[which(is.na(es.h.feols$Time_to_Treatment)), 'Time_to_Treatment'] <- 0 # can be an arbitrary value
+
+  # Fit the model
+  res_es.h.feols <- feols(log_Y ~ i(Time_to_Treatment, treat, ref = -1) |
+                            iso3c[t] + region_agg^year + iso3c + year,
+                          data = es.h.feols,
+                          cluster = "iso3c")
+
+  # Extract coefficients
+  es.h.output <- as.matrix(res_es.h.feols$coeftable)
+
+  # Convert to data frame
+  es.h.output <- as.data.frame(es.h.output)
+
+  # Extract the time values from the row names
+  time_values <- sub("Time_to_Treatment::([-0-9]+):treat", "\\1", rownames(es.h.output))
+  
+  # Convert the extracted values to numeric
+  time_values <- as.numeric(time_values)
+  
+  # Add the new variable 'Time' to the data frame
+  es.h.output$Time <- time_values+1
+
+  # Add number of treated observations for each time period
+  es.h.count <- summarize(es.h.feols,
+                          treated_units = sum(treat),
+                          .by = Time_to_Treatment)
+  es.h.output <- merge(es.h.output, es.h.count, 
+                       by.x = "Time", by.y = "Time_to_Treatment")
+
+  # Plot the results
+  p.feols.h <- fect::esplot(es.h.output,
+                            Period = 'Time', Estimate = 'Estimate',
+                            Count = "treated_units", show.count = TRUE,
+                            SE = 'Std. Error')
+  
+  print(p.feols.h)
+  
+}
+```
+
+### Binning
+
+```{r}
+
+# Function to process each treatment variable
+bin_es_plot <- function(treat_var) {
+  # Drop always treated units
+  df.h <- data %>%
+    group_by(iso3c) %>%
+    mutate(treatment_mean = mean(!!sym(treat_var), na.rm = TRUE)) %>%
+    ungroup() %>%
+    filter(treatment_mean < 1)
+
+  # Baseline specification w/ sub-sample (only 'ever-treated' units)
+  formula <- as.formula(paste("log_Y ~", treat_var, "| iso3c[t] + region_agg^year + iso3c + year"))
+  res_ever_H <- feols(formula, data = df.h, cluster = "iso3c")
+
+  # Dynamic TWFE
+  es.h.feols <- fect::get.cohort(df.h, D = treat_var, index = c("iso3c", "year"))
+  es.h.feols$treat <- as.numeric(es.h.feols$treatment_mean > 0)
+  es.h.feols$Time_to_Treatment[is.na(es.h.feols$Time_to_Treatment)] <- 0
+
+  # Bin Time_to_Treatment
+  es.h.feols$Time_to_Treatment_bin <- bin(es.h.feols$Time_to_Treatment, list("< -5" = ~x < -5, "> 5" = ~x > 5))
+
+  # Fit the model
+  res <- feols(log_Y ~ i(Time_to_Treatment_bin, treat, ref = -1) | iso3c[t] + region_agg^year + iso3c + year,
+               data = es.h.feols, cluster = "iso3c")
+
+  # Extract and process coefficients
+  output <- as.data.frame(res$coeftable)
+  output$Time <- c(-6:-2, 0:6) + 1
+
+  # Add number of treated observations for each time period
+  bin_count <- es.h.feols %>%
+    group_by(Time_to_Treatment) %>%
+    summarize(treated_units = sum(treat), .groups = 'drop')
+
+  output <- merge(output, bin_count, by.x = "Time", by.y = "Time_to_Treatment")
+
+  # Plot the results
+  p <- fect::esplot(output, Period = 'Time', Estimate = 'Estimate', SE = 'Std. Error', xlim = c(-6, 6),
+                    main = paste("Estimated Binned DTEs:", treat_var))
+
+  # Return the results
+  list(output = output, plot = p)
+}
+
+# Apply the function to each treatment variable
+results <- lapply(treat.vars.first, bin_es_plot)
+
+```
+
+## LP-DID
+
+```{r}
+
+
+```
+
+## Counterfactual/Imputation estimator
+
+```{r}
+
+df <- data
+
+df$reg_year <- paste0(df$region_agg, "_", df$year)
+```
+
+```{r fect}
+
+# Iterate over each treatment variable
+for (treat_var in treat.vars.first) {
+
+  # Fit the model
+  formula <- as.formula(paste("log_Y ~", treat_var))
+  out.fect <- fect(formula, data = df,
+                   index = c("iso3c", "year"),
+                   method = "cfe", force = "two-way",
+                   se = TRUE, parallel = TRUE, nboots = 200,
+                   sfe = c("reg_year"),
+                   cfe = list(c("iso3c", "t")))
+
+  # Plot the results
+  p.fect <- plot(fect.output)
+  p.fect
+
+}
+
+```
+
+### Balanced treated sample
+
+Estimate the average treatment effects only for *treated* units that exhibit complete data in specified pre- and post-treatment periods. Here, 5 pre- and post-treatment periods.
+
+```{r fect.balanced}
+
+# Iterate over each treatment variable
+for (treat_var in treat.vars.first) {
+
+  # Fit the model
+  formula <- as.formula(paste("log_Y ~", treat_var))
+  out.fect <- fect(formula, data = df,
+                   index = c("iso3c", "year"),
+                   method = "cfe", force = "two-way",
+                   se = TRUE, parallel = TRUE, nboots = 200,
+                   sfe = c("reg_year"),
+                   cfe = list(c("iso3c", "t")),
+                   balance.period = c(-4,5))
+
+  # Plot the results
+  p.fect <- plot(fect.output)
+  p.fect
+
+}
+
+```
+
+## Gsynth
+
+```{r}
+
+# Iterate over each treatment variable
+for (treat_var in treat.vars.first) {
+
+  # Fit the model
+  formula <- as.formula(paste("log_Y ~", treat_var))
+  out.fect <- fect(formula, data = df,
+                   index = c("iso3c", "year"),
+               se = TRUE, method = "gsynth",
+               r = 0, CV = FALSE, force = "two-way", 
+               nboots = 1000, seed = 02139)
+
+  # Plot the results
+  p.fect <- plot(fect.output, type = "gap")
+  p.fect
+  
+}
+
+```
+
+# Non-linear models
+
+## TWFE PPML
+
+```{r twfe.ppml}
+
+# Function to process each treatment variable
+bin_es.twfe.ppml_plot <- function(treat_var) {
+  # Drop always treated units
+  df.h <- data %>%
+    group_by(iso3c) %>%
+    mutate(treatment_mean = mean(!!sym(treat_var), na.rm = TRUE)) %>%
+    ungroup() %>%
+    filter(treatment_mean < 1)
+
+  # Dynamic TWFE
+  df.h.cohort <- fect::get.cohort(df.h, D = treat_var, index = c("iso3c", "year"))
+  df.h.cohort$treat <- as.numeric(df.h.cohort$treatment_mean > 0)
+  df.h.cohort$Time_to_Treatment[is.na(df.h.cohort$Time_to_Treatment)] <- 0
+
+  # Bin Time_to_Treatment
+  df.h.cohort$Time_to_Treatment_bin <- bin(df.h.cohort$Time_to_Treatment, 
+                                           list("< -5" = ~x < -5, "> 5" = ~x > 5))
+
+  # Fit the model
+  res <- fepois(Y ~ i(Time_to_Treatment_bin, treat, ref = -1) | 
+                       iso3c[t] + region_agg^year + iso3c + year,
+               data = df.h.cohort, cluster = "iso3c")
+
+  # Extract and process coefficients
+  output <- as.data.frame(res$coeftable)
+  output$Time <- c(-6:-2, 0:6) + 1
+
+  # Add number of treated observations for each time period
+  bin_count <- df.h.cohort |> 
+    group_by(Time_to_Treatment_bin) |> 
+    summarize(treated_units = sum(treat), .groups = 'drop')
+
+  output <- merge(output, bin_count, by.x = "Time", by.y = "Time_to_Treatment_bin")
+
+  # Plot the results
+  p <- fect::esplot(output, Period = 'Time', 
+                    Estimate = 'Estimate', 
+                    SE = 'Std. Error', 
+                    xlim = c(-6, 6),
+                    main = paste("Estimated Binned DTEs:", treat_var))
+
+  # Return the results
+  list(output = output, plot = p)
+}
+
+# Apply the function to each treatment variable
+lapply(treat.vars.first, bin_es.twfe.ppml_plot)
+
+```
+
+## ETWFE
+
+```{r etwfe}
+
+# By default, only use 'not-yet' treated as control group.
+# i.e. remove 'always-treated' and 'never-treated'
+
+library(etwfe)
+
+# cohort_D_H
+mod_es = etwfe(
+  fml  = Y ~ 1, # outcome ~ controls
+  tvar = year,        # time variable
+  gvar = cohort_D_H, # group variable
+  data = data,       # dataset
+  vcov = ~iso3c,  # vcov adjustment (here: clustered),
+  family = "poisson"
+) |> 
+  emfx(type = "event")
+
+plot(mod_es)
+
+# cohort_D_Hs
+mod_es = etwfe(
+  fml  = Y ~ 1, # outcome ~ controls
+  tvar = year,        # time variable
+  gvar = cohort_D_Hs, # group variable
+  data = data,       # dataset
+  vcov = ~iso3c,  # vcov adjustment (here: clustered)
+  family = "poisson"
+) |> 
+  emfx(type = "event")
+
+plot(mod_es)
+
+# cohort_D_He
+mod_es = etwfe(
+  fml  = Y ~ 1, # outcome ~ controls
+  tvar = year,        # time variable
+  gvar = cohort_D_He, # group variable
+# cgroup = "never", # use "never-treated" as control group, return pre-treat efx
+  data = data,       # dataset
+  vcov = ~iso3c,  # vcov adjustment (here: clustered)
+  family = "poisson"
+) |> 
+  emfx(type = "event")
+
+plot(mod_es)
+
+```
+
+# Heterogeneity
+
+## Disaster magnitude
+
+```{r}
+
+```
+
+## ODA category
+
+```{r Humanitarian}
+
+df.Hum <- data_sample_iso_cat |> 
+  filter(category == "Humanitarian") |> 
+  dplyr::select(iso3c, year, t, Y, D_H, D_H_first, D_Hs, D_Hs_first, region_agg) |>
+  mutate(log_Y = log(Y + .001),
+         reg_year = paste0(region_agg, "_", year)
+         )
+
+## Non-absorbing
+panelview(df.Hum, D = "D_H", index = c("iso3c","year"), 
+          by.timing = TRUE)
+
+# Fect
+out.fect <- fect(log_Y ~ D_H,
+                 index = c("iso3c", "year"),
+#                 group = "Cohort",
+                 data = df.Hum,
+                 method = "fe", force = "two-way",
+                 sfe = c("reg_year"), cfe = list(c("iso3c", "t")),
+                 se = TRUE, parallel = TRUE, nboots = 200)
+
+plot(out.fect, type = "exit", main = "Estimated ATT", ylab = "Effect of D on Y", cex.main = 0.8, cex.lab = 0.8, cex.axis = 0.8, stats = "F.p")
+
+## Absorbing
+
+df.Hum <- df.Hum |> 
+  get.cohort(D = "D_H", index = c("iso3c", "year")) |> 
+  mutate(
+    D_H_short = case_when(
+      D_H_first == 1 & (year >= FirstTreat & year < FirstTreat+3) ~ 1,
+      TRUE ~ 0),
+    D_H_long = case_when(
+      D_H_first == 1 & year >= FirstTreat+3 ~ 1,
+      TRUE ~ 0)
+    )
+
+panelview(df.Hum, D = "D_H_first", index = c("iso3c","year"), 
+          by.timing = TRUE)
+
+panelview(df.Hum, D = "D_H_short", index = c("iso3c","year"), 
+          by.timing = TRUE)
+panelview(df.Hum, D = "D_H_long", index = c("iso3c","year"), 
+          by.timing = TRUE)
+
+# Fect
+# Short-term [0:3]
+out.fect.short <- fect(log_Y ~ D_H_short + D_H_long,
+                 D = "D_H_short",
+                 index = c("iso3c", "year"),
+#                 group = "Cohort",
+                 data = df.Hum,
+                 method = "fe", force = "two-way",
+                 sfe = c("reg_year"), cfe = list(c("iso3c", "t")),
+                 se = TRUE, parallel = TRUE, nboots = 200)
+
+plot(out.fect.short, main = "Estimated ATT", ylab = "Effect of D on Y", cex.main = 0.8, cex.lab = 0.8, cex.axis = 0.8, stats = "F.p")
+
+# Long-term [>3]
+out.fect.long <- fect(log_Y ~ D_H_long + D_H_short,
+                 D = "D_H_long",
+                 index = c("iso3c", "year"),
+#                 group = "Cohort",
+                 data = df.Hum,
+                 method = "fe", force = "two-way",
+                 sfe = c("reg_year"), cfe = list(c("iso3c", "t")),
+                 se = TRUE, parallel = TRUE, nboots = 200)
+
+plot(out.fect.long, main = "Estimated ATT", ylab = "Effect of D on Y", cex.main = 0.8, cex.lab = 0.8, cex.axis = 0.8, stats = "F.p")
+
+```
+
+```{r Humanitarian.ETWFE}
+
+## Non-linear
+# ETWFE
+
+df.Hum.etwfe <- df.Hum |> 
+  mutate(first.treat = replace_na(FirstTreat, 0))
+
+library(etwfe)
+
+# cohort_D_H
+mod_es = etwfe(
+  fml  = Y ~ 1, # outcome ~ controls
+  tvar = year, # time variable
+  ivar = iso3c, # index variable
+  gvar = first.treat, # group variable
+  data = df.Hum.etwfe, # dataset
+  vcov = ~iso3c,  # vcov adjustment (here: clustered),
+  family = "poisson"
+) |> 
+  emfx(type = "event")
+
+plot(mod_es)
+
+```
+
+```{r Development}
+
+df.Dev <- data_sample_iso_cat |> 
+  filter(category == "Development") |> 
+  dplyr::select(iso3c, year, t, Y, D_H, D_H_first, D_Hs, D_Hs_first, region_agg) |>
+  mutate(log_Y = log(Y + .001),
+         reg_year = paste0(region_agg, "_", year)
+         )
+
+## Non-absorbing
+panelview(df.Dev, D = "D_H", index = c("iso3c","year"), 
+          by.timing = TRUE)
+
+# Fect
+out.fect <- fect(log_Y ~ D_H,
+                 index = c("iso3c", "year"),
+#                 group = "Cohort",
+                 data = df.Dev,
+                 method = "fe", force = "two-way",
+                 sfe = c("reg_year"), cfe = list(c("iso3c", "t")),
+                 se = TRUE, parallel = TRUE, nboots = 200)
+
+plot(out.fect, type = "exit", main = "Estimated ATT", ylab = "Effect of D on Y", cex.main = 0.8, cex.lab = 0.8, cex.axis = 0.8, stats = "F.p")
+
+## Absorbing
+
+df.Dev <- df.Dev |> 
+  get.cohort(D = "D_H", index = c("iso3c", "year")) |> 
+  mutate(
+    D_H_short = case_when(
+      D_H_first == 1 & (year >= FirstTreat & year < FirstTreat+3) ~ 1,
+      TRUE ~ 0),
+    D_H_long = case_when(
+      D_H_first == 1 & year >= FirstTreat+3 ~ 1,
+      TRUE ~ 0)
+    )
+
+# Fect
+panelview(df.Dev, D = "D_H_first", index = c("iso3c","year"), 
+          by.timing = TRUE)
+
+out.fect.abs <- fect(log_Y ~ D_H_first,
+                 D = "D_H_first",
+                 index = c("iso3c", "year"),
+#                 group = "Cohort",
+                 data = df.Dev,
+                 method = "fe", force = "two-way",
+                 sfe = c("reg_year"), cfe = list(c("iso3c", "t")),
+                 se = TRUE, parallel = TRUE, nboots = 200)
+
+plot(out.fect.abs, main = "Estimated ATT", ylab = "Effect of D on Y", cex.main = 0.8, cex.lab = 0.8, cex.axis = 0.8, stats = "F.p")
+
+# Short-term [0:3]
+panelview(df.Dev, D = "D_H_short", index = c("iso3c","year"), 
+          by.timing = TRUE)
+
+out.fect.short <- fect(log_Y ~ D_H_short + D_H_long,
+                 D = "D_H_short",
+                 index = c("iso3c", "year"),
+#                 group = "Cohort",
+                 data = df.Dev,
+                 method = "fe", force = "two-way",
+                 sfe = c("reg_year"), cfe = list(c("iso3c", "t")),
+                 se = TRUE, parallel = TRUE, nboots = 200)
+
+plot(out.fect.short, main = "Estimated ATT", ylab = "Effect of D on Y", cex.main = 0.8, cex.lab = 0.8, cex.axis = 0.8, stats = "F.p")
+
+# Long-term [>3]
+panelview(df.Dev, D = "D_H_long", index = c("iso3c","year"), 
+          by.timing = TRUE)
+
+out.fect.long <- fect(log_Y ~ D_H_long + D_H_short,
+                 D = "D_H_long",
+                 index = c("iso3c", "year"),
+#                 group = "Cohort",
+                 data = df.Dev,
+                 method = "fe", force = "two-way",
+                 sfe = c("reg_year"), cfe = list(c("iso3c", "t")),
+                 se = TRUE, parallel = TRUE, nboots = 200)
+
+plot(out.fect.long, main = "Estimated ATT", ylab = "Effect of D on Y", cex.main = 0.8, cex.lab = 0.8, cex.axis = 0.8, stats = "F.p")
+```
+
+```{r Development.ETWFE}
+
+## Non-linear
+# ETWFE
+
+df.Dev.etwfe <- df.Dev |> 
+  mutate(first.treat = replace_na(FirstTreat, 0))
+
+library(etwfe)
+
+# cohort_D_H
+mod_es = etwfe(
+  fml  = Y ~ 1, # outcome ~ controls
+  tvar = year, # time variable
+  ivar = iso3c, # index variable
+  gvar = first.treat, # group variable
+  data = df.Dev.etwfe, # dataset
+  vcov = ~iso3c,  # vcov adjustment (here: clustered),
+  family = "poisson"
+) |> 
+  emfx(type = "event")
+
+plot(mod_es)
+
+```
+
+## Income group
+
+```{r inc.gp.etwfe}
+
+df.inc <- data |> 
+  dplyr::select(iso3c, year, Y, D_H, inc_gp) |> 
+  get.cohort(D = "D_H", index = c("iso3c", "year")) |> 
+  mutate(first.treat = replace_na(FirstTreat, 0)) |> 
+  group_by(iso3c) |>
+  mutate(inc.D = replace_na(inc_gp[year == first.treat][1], inc_gp[min(year)]),
+         low.inc = case_when(inc.D == "L" ~ TRUE, .default = FALSE)) |>
+  ungroup()
+
+mod_es = etwfe(
+  fml  = Y ~ 0, # outcome ~ controls
+  tvar = year, # time variable
+  ivar = iso3c, # index variable
+  gvar = first.treat, # group variable
+  xvar = low.inc, #  interacted categorical covariate
+  data = df.inc, # dataset
+  vcov = ~iso3c,  # vcov adjustment (here: clustered),
+  family = "poisson"
+)
+
+(mod_es_mfx = emfx(mod_es))
+emfx(mod_es, hypothesis = "b1 = b2")
+```
+
+## State of Emergency
+
+```{r}
+
+# state of emergency
+lprop(xtabs(~ D_H + decla_dummy, data))
+lprop(xtabs(~ D_Hs + decla_dummy, data))
+lprop(xtabs(~ D_He + decla_dummy, data))
+lprop(xtabs(~ D_HeHs + decla_dummy, data))
+lprop(xtabs(~ D_LeLs + decla_dummy, data))
+
+```
+
+```{r SoE.H}
+
+df.H <- data |> 
+  dplyr::select(log_Y, D_H, decla_dummy, region_agg, iso3c, year) |> 
+  mutate(
+    i.treat = replace_na(ifelse(decla_dummy == 1 & D_H, 1, 0), 0),
+    reg_year = paste0(region_agg, "_", year),
+    t = year - min(year)
+         )
+
+## Non-absorbing
+panelview(df.H, D = "i.treat", index = c("iso3c","year"), 
+          by.timing = TRUE)
+
+# Fect
+out.fect <- fect(log_Y ~ i.treat + D_H + decla_dummy,
+                 index = c("iso3c", "year"),
+#                 group = "Cohort",
+                 data = df.H,
+                 method = "fe", force = "two-way",
+                 sfe = c("reg_year"), cfe = list(c("iso3c", "t")),
+                 se = TRUE, parallel = TRUE, nboots = 200)
+
+plot(out.fect, type = "exit", main = "Estimated ATT", ylab = "Effect of D on Y", cex.main = 0.8, cex.lab = 0.8, cex.axis = 0.8, stats = "F.p")
+
+## Absorbing
+df.H.first <- get.cohort(df.H, c("iso3c","year"), D = "i.treat") |> 
+  mutate(i.treat_first = case_when(
+    year >= FirstTreat ~ 1, 
+    TRUE ~ 0))
+
+panelview(df.H.first, D = "i.treat_first", index = c("iso3c","year"), 
+          by.timing = TRUE, collapse.history = TRUE)
+
+# GSynth
+out.gsynth <- fect(log_Y ~ i.treat_first, 
+                 index = c("iso3c","year"),
+#                 group = "Cohort",
+                 data = df.H.first,
+                 method = "gsynth", force = "two-way",
+                 sfe = c("reg_year"), cfe = list(c("iso3c", "t")),
+                 se = TRUE, parallel = TRUE, nboots = 200)
+
+plot(out.gsynth, main = "Estimated ATT (Gsynth)", ylab = "Effect of D on Y", 
+  cex.main = 0.8, cex.lab = 0.8, cex.axis = 0.8, stats = "F.p")
+
+```
+
+```{r SoE.Hs}
+
+df.Hs <- data |> 
+  dplyr::select(log_Y, D_Hs, decla_dummy, region_agg, iso3c, year) |> 
+  mutate(
+    i.treat = replace_na(ifelse(decla_dummy == 1 & D_Hs, 1, 0), 0),
+    reg_year = paste0(region_agg, "_", year),
+    t = year - min(year)
+         )
+
+## Non-absorbing
+panelview(df.Hs, D = "i.treat", index = c("iso3c","year"), 
+          by.timing = TRUE)
+
+# Fect
+out.fect <- fect(log_Y ~ i.treat + D_Hs + decla_dummy, 
+                 index = c("iso3c", "year"),
+#                 group = "Cohort",
+                 data = df.Hs,
+                 method = "fe", force = "two-way",
+                 sfe = c("reg_year"), cfe = list(c("iso3c", "t")),
+                 se = TRUE, parallel = TRUE, nboots = 200)
+
+plot(out.fect, type = "exit", main = "Estimated ATT", ylab = "Effect of D on Y", cex.main = 0.8, cex.lab = 0.8, cex.axis = 0.8, stats = "F.p")
+
+## Absorbing
+df.Hs.first <- get.cohort(df.Hs, c("iso3c","year"), D = "i.treat") |> 
+  mutate(i.treat_first = case_when(
+    year >= FirstTreat ~ 1, 
+    TRUE ~ 0))
+
+panelview(df.Hs.first, D = "i.treat_first", index = c("iso3c","year"), 
+          by.timing = TRUE, collapse.history = TRUE)
+
+# GSynth
+out.gsynth <- fect(log_Y ~ i.treat_first, 
+                 index = c("iso3c","year"),
+#                 group = "Cohort",
+                 data = df.Hs.first,
+                 method = "gsynth", force = "two-way",
+                 sfe = c("reg_year"), cfe = list(c("iso3c", "t")),
+                 se = TRUE, parallel = TRUE, nboots = 200)
+
+plot(out.gsynth, main = "Estimated ATT (Gsynth)", ylab = "Effect of D on Y", 
+  cex.main = 0.8, cex.lab = 0.8, cex.axis = 0.8, stats = "F.p")
+
+```
+
+```{r SoE.H.etwfe}
+
+# Absorbing
+# NOTE: not enough observations with first treatment x Soe.
+
+# Non-absorbing
+data |> 
+  dplyr::select(Y, D_H, decla_dummy, iso3c, year) |>
+  etwfe(
+    fml  = Y ~ 0, # outcome ~ controls
+    tvar = year, # time variable
+    ivar = iso3c, # index variable
+    gvar = D_H, # group variable
+    xvar = decla_dummy, #  interacted categorical covariate
+    vcov = ~iso3c,  # vcov adjustment (here: clustered),
+    family = "poisson"
+) |> 
+  emfx(hypothesis = "b1 = b2")
+```
+
+## Request for international assistance
+
+```{r}
+
+# request for international assistance
+lprop(xtabs(~ D_H + appeal_dummy, data))
+lprop(xtabs(~ D_Hs + appeal_dummy, data))
+lprop(xtabs(~ D_He + appeal_dummy, data))
+lprop(xtabs(~ D_HeHs + appeal_dummy, data))
+lprop(xtabs(~ D_LeLs + appeal_dummy, data))
+
+```
+
+```{r RIA.H}
+
+df.H <- data |> 
+  dplyr::select(log_Y, D_H, appeal_dummy, region_agg, iso3c, year) |> 
+  mutate(
+    i.treat = replace_na(ifelse(appeal_dummy == 1 & D_H, 1, 0), 0),
+    reg_year = paste0(region_agg, "_", year),
+    t = year - min(year)
+         )
+
+## Non-absorbing
+panelview(df.H, D = "i.treat", index = c("iso3c","year"), 
+          by.timing = TRUE)
+
+# Fect
+out.fect <- fect(log_Y ~ i.treat + D_H + appeal_dummy,
+                 index = c("iso3c", "year"),
+#                 group = "Cohort",
+                 data = df.H,
+                 method = "fe", force = "two-way",
+                 sfe = c("reg_year"), cfe = list(c("iso3c", "t")),
+                 se = TRUE, parallel = TRUE, nboots = 200)
+
+plot(out.fect, type = "exit", main = "Estimated ATT", ylab = "Effect of D on Y", cex.main = 0.8, cex.lab = 0.8, cex.axis = 0.8, stats = "F.p")
+
+## Absorbing
+df.H.first <- get.cohort(df.H, c("iso3c","year"), D = "i.treat") |> 
+  mutate(i.treat_first = case_when(
+    year >= FirstTreat ~ 1, 
+    TRUE ~ 0))
+
+panelview(df.H.first, D = "i.treat_first", index = c("iso3c","year"), 
+          by.timing = TRUE, collapse.history = TRUE)
+
+# GSynth
+out.gsynth <- fect(log_Y ~ i.treat_first, 
+                 index = c("iso3c","year"),
+#                 group = "Cohort",
+                 data = df.H.first,
+                 method = "gsynth", force = "two-way",
+                 sfe = c("reg_year"), cfe = list(c("iso3c", "t")),
+                 se = TRUE, parallel = TRUE, nboots = 200)
+
+plot(out.gsynth, main = "Estimated ATT (Gsynth)", ylab = "Effect of D on Y", 
+  cex.main = 0.8, cex.lab = 0.8, cex.axis = 0.8, stats = "F.p")
+
+```
+
+## US Humanitarian response
+
+```{r}
+
+# US Humanitarian response
+lprop(xtabs(~ D_H + ofda_bha_dummy, data))
+lprop(xtabs(~ D_Hs + ofda_bha_dummy, data))
+lprop(xtabs(~ D_He + ofda_bha_dummy, data))
+lprop(xtabs(~ D_HeHs + ofda_bha_dummy, data))
+lprop(xtabs(~ D_LeLs + ofda_bha_dummy, data))
+
+```
+
+```{r USHum.H}
+
+df.H <- data |> 
+  dplyr::select(log_Y, D_H, ofda_bha_dummy, region_agg, iso3c, year) |> 
+  mutate(
+    i.treat = replace_na(ifelse(ofda_bha_dummy == 1 & D_H, 1, 0), 0),
+    reg_year = paste0(region_agg, "_", year),
+    t = year - min(year)
+         )
+
+## Non-absorbing
+panelview(df.H, D = "i.treat", index = c("iso3c","year"), 
+          by.timing = TRUE)
+
+# Fect
+out.fect <- fect(log_Y ~ i.treat + D_H + ofda_bha_dummy,
+                 index = c("iso3c", "year"),
+#                 group = "Cohort",
+                 data = df.H,
+                 method = "fe", force = "two-way",
+                 sfe = c("reg_year"), cfe = list(c("iso3c", "t")),
+                 se = TRUE, parallel = TRUE, nboots = 200)
+
+plot(out.fect, type = "exit", main = "Estimated ATT", ylab = "Effect of D on Y", cex.main = 0.8, cex.lab = 0.8, cex.axis = 0.8, stats = "F.p")
+
+## Absorbing
+df.H.first <- get.cohort(df.H, c("iso3c","year"), D = "i.treat") |> 
+  mutate(i.treat_first = case_when(
+    year >= FirstTreat ~ 1, 
+    TRUE ~ 0))
+
+panelview(df.H.first, D = "i.treat_first", index = c("iso3c","year"), 
+          by.timing = TRUE, collapse.history = TRUE)
+
+# GSynth
+out.gsynth <- fect(log_Y ~ i.treat_first, 
+                 index = c("iso3c","year"),
+#                 group = "Cohort",
+                 data = df.H.first,
+                 method = "gsynth", force = "two-way",
+                 sfe = c("reg_year"), cfe = list(c("iso3c", "t")),
+                 se = TRUE, parallel = TRUE, nboots = 200)
+
+plot(out.gsynth, main = "Estimated ATT (Gsynth)", ylab = "Effect of D on Y", 
+  cex.main = 0.8, cex.lab = 0.8, cex.axis = 0.8, stats = "F.p")
+
+```

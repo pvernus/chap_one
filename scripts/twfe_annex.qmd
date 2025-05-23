@@ -1,0 +1,772 @@
+---
+title: "202410_recip_ext"
+format: html
+editor: visual
+---
+
+# Effects on recipients.
+
+# 1. Research design
+
+## 1.1 Outcome
+
+### **Alternative definitions of outcome.**
+
+-   **Quantity**: ODA Disbursementsin constant dollars
+
+### **Alternative definitions of nonzero outcome.**
+
+-   rounding (ex: at 0.001 MUSD unit)
+
+-   with threshold (ex: 1 000 USD)
+
+```{r}
+
+outcome |> 
+# Create binary outcome vars w/ 1000 USD threshold
+  mutate(
+    commit_dummy_thresh = case_when(commit>=1 ~ 1,
+      is.na(commit) ~ NA,
+      .default = 0),
+    commit_state_dummy_thresh = case_when(commit_state>=1 ~ 1,
+      is.na(commit_state) ~ NA,
+      .default = 0),
+    commit_nonstate_dummy_thresh = case_when(commit_nonstate>=1 ~ 1,
+      is.na(commit_nonstate) ~ NA,
+      .default = 0)  
+  )
+
+```
+
+### **Sector selection.**
+
+Should the sample include:
+
+-   VII\. Action Relating to Debt
+
+-   IX\. Unallocated / Unspecified (n.b. duplicated with 'Sectors not specified')
+
+-   Refugees in Donor Countries
+
+-   Administrative Costs of Donors
+
+## 1.2 Treatment
+
+### **Climatic events definition.**
+
+Definition by [@yang2008; @raddatz2007; @dellmuth2021] also fits with the 'Weather and Climate Extreme Events' assessed by the [@seneviratne2021]: temperature extremes, heavy precipitation and pluvial floods, river floods, droughts, and storms.
+
+Besides, in the case of droughts, the authors distinguish between: meteorological droughts, agricultural and ecological droughts, and hydrological droughts.
+
+In the case of storms, they distinguish between tropical cyclones, extratropical cyclones, and severe convective storms.
+
+Finally, they also assess compound events.
+
+### **Fast- and slow-onset events.**
+
+Climatic extreme weather events could further be divided between:
+
+-   **fast-onset** extreme events
+
+    -   floods
+
+    -   hurricanes
+
+-   **slow-onset** extreme events
+
+    -   droughts
+
+    -   extreme temperatures
+
+> *Note: slow-onset* extreme *events differ from slow onset events, which include “sea level rise, increasing temperatures, ocean acidification, glacial retreat and related impacts, salinization, land and forest degradation, loss of biodiversity and desertification." (source: IPCC).*
+
+```{r data_emdat_clim_onset}
+
+data_emdat_clim <- data_emdat_clim |>    
+  mutate(slow_event = ifelse(grepl("nat-cli-dro|nat-met-ext", classification_key), 1, 0),          
+         fast_event = ifelse(grepl("nat-hyd-flo|nat-met-sto", classification_key), 1, 0)) 
+
+```
+
+```{r data_emdat_clim_onset_robust}
+
+# robustness check: no interaction between slow/fast-onset events
+xtabs(~ slow_event + fast_event, data = data_emdat_clim)
+# ~12% of registered events are slow-onset events
+
+```
+
+### **Missing data.**
+
+There is a significant share of missing values in the exposure and intensity measures of EM-DAT. This is one argument in favor of using an alternative proxy for an event's intensity.
+
+```{r data_emdat_clim_missing}
+
+data_emdat_clim |> 
+  select(dis_no, classification_key, start_year, 
+         total_deaths, total_affected, total_damage_adjusted_000_us) |> 
+  visdat::vis_miss(cluster = T) +
+  labs(title="Missing data: Climatic events")
+
+```
+
+Potential solutions:
+
+-   missing data imputation
+
+-   other proxies with different variables (cf. physical measures)
+
+### 'Large' events.
+
+At what scale build the intensity measures?
+
+-   event
+
+-   country-year unit (i.e. aggregate impacts of similar events happening in the same unit)
+
+```{r}
+
+large <- merge |> 
+  mutate(
+    large_event_dummy = case_when(
+      total_affected >= 1e+05 ~ 1,
+      total_deaths >= 1000 ~ 1,
+      total_damage_adjusted_000_us >= 1e+06 ~ 1, # Adjusted ('000 US$)
+      .default = 0),
+    large.s_event_dummy = case_when(
+      total_affected >= 1e+05 ~ 1,
+      total_deaths >= 1000 ~ 1,
+      .default = 0),    
+    large.e_event_dummy = case_when(
+      total_damage_adjusted_000_us >= 1e+06 ~ 1, # Adjusted ('000 US$)
+      .default = 0),      
+      .by = "dis_no")
+
+# compare co-occurence of large disasters when defined by people or economic damages 
+xtabs(~ large.s_event_dummy + large.e_event_dummy, data = large)
+
+# Comment : (i) most large disasters are based one of the two 'social' criteria (affected/death).  (ii) a majority of large 'economic' disasters are not considered large 'social' ones.
+
+large |> 
+  mutate(iso3 = substr(dis_no, nchar(dis_no) - 2, nchar(dis_no)),
+         dis = substr(classification_key, nchar(classification_key) - 6, nchar(classification_key))) |> 
+  summarize(
+    large_soc = sum(large.s_event_dummy),
+    large_eco = sum(large.e_event_dummy),
+    .by = iso3
+  ) |> 
+  arrange(desc(large_eco))
+
+# Comment : most large 'economic' disasters happened in richer countries (HICs, UMICs). These countries usually have more fiscal space to face damages + they might not accept external assistance (seen as ingerence & loss of international status).
+```
+
+### Assignment mechanism.
+
+Absorbing (staggered)
+
+-   staggered entry and exit
+-   staggered entry and no exit
+
+Discrete or continuous treatment.
+
+### **'Large' disaster event vs. year.**
+
+In most cases there is no difference between a 'large' disaster event and a 'large' disaster year. However, there are cases where no 'large' event occurs in a year, but the aggregation of event impacts exceeds a threshold defined as criterion for 'large' disasters.
+
+```{r}
+
+xtabs(~large_year_dummy+large_event_dummy, treatment)
+
+```
+
+However, it doesn't change much in the share of treated cells.
+
+```{r}
+
+janitor::tabyl(treatment, large_event_dummy)
+janitor::tabyl(treatment, large_year_dummy)
+```
+
+### Correlation.
+
+```{r}
+
+prop(xtabs(~ flood_dummy + storm_dummy, data = treatment))
+prop(xtabs(~ large_flood_dummy + large_storm_dummy, data = treatment))
+prop(xtabs(~ large_flood_dummy + storm_dummy, data = treatment))
+
+treatment |> 
+  correlation(
+    select = c("flood_dummy", "large_flood_dummy"),
+    select2 = c("storm_dummy", "large_storm_dummy")
+  )
+
+# comment : significant/positive correlation between 'large' flood~storm events
+
+prop(xtabs(~ drought_dummy + heatw_dummy, data = treatment))
+prop(xtabs(~ large_drought_dummy + large_heatw_dummy, data = treatment))
+prop(xtabs(~ large_drought_dummy + heatw_dummy, data = treatment))
+
+treatment |> 
+  correlation(
+    select = c("drought_dummy", "large_drought_dummy"),
+    select2 = c("heatw_dummy", "large_heatw_dummy")
+  )
+
+# comment : no significant correlation between drought~heatwaves
+
+treatment |> 
+  correlation(
+    select = c("flood_dummy", "large_flood_dummy"),
+    select2 = c("drought_dummy", "large_drought_dummy")
+  )
+
+prop(xtabs(~ flood_dummy + drought_dummy, data = treatment))
+prop(xtabs(~ large_flood_dummy + large_drought_dummy, data = treatment))
+prop(xtabs(~ large_flood_dummy + drought_dummy, data = treatment))
+
+treatment |> 
+  correlation(
+    select = c("flood_dummy", "large_flood_dummy"),
+    select2 = c("heatw_dummy", "large_heatw_dummy")
+  ) |>
+  plot()
+```
+
+```{r}
+
+merge(treatment, cov_region[, 1:4],
+      by = c("recipient_id", "recipient_name")) |> 
+  summarize(
+    all = round(sum(large_dis_dummy)/length(large_dis_dummy)*100, 1),
+    flood = round(sum(large_flood_dummy)/length(large_flood_dummy)*100, 1),
+    drought = round(sum(large_drought_dummy)/length(large_drought_dummy)*100, 1),
+    storm = round(sum(large_storm_dummy)/length(large_storm_dummy)*100, 1),
+    heatw = round(sum(large_heatw_dummy)/length(large_heatw_dummy)*100, 1), 
+                    .by = c("year", "region_name")) |> 
+  pivot_longer(cols = -c("year", "region_name"), names_to = "dis", values_to = "sh") |> 
+  ggplot(aes(x = year, y = sh, col = dis)) +
+  geom_line() +
+  geom_smooth(method = "lm") +
+  facet_wrap(~region_name+dis, scales = "free_y") +
+  theme_light() +
+  labs(y = "% of countries", 
+       title = "Proportion of countries affected by a 'large' disaster")
+
+# Comment: small positive linear trends over the period
+```
+
+Lagged treatments (at least up to 5 periods) are correlated with current treatment.
+
+This might imply that estimators based on the baseline randomization assumption are inadequate and estimators based on the sequential ignorability assumption should be preferred.
+
+in that case, (i) add lagged treatment variables in the dataset and (ii) choose estimator accordingly.
+
+```{r corr}
+
+## correlation analysis
+
+# create lagged treatment vars
+create_lagged_variables <- function(data, n_lags = 5) {
+  # Convert to data.table for faster operations
+  require(data.table)
+  dt <- as.data.table(data)
+  
+  # Define variables to lag
+  variables <- c("event_dummy", "slow_event_dummy", "fast_event_dummy",
+                 "large_dummy", "slow_large_dummy", "fast_large_dummy")
+  
+  # Create lags for each variable
+  for (var in variables) {
+    for (lag_n in 1:n_lags) {
+      new_col <- paste0(var, "_l", lag_n)
+      dt[, (new_col) := shift(.SD, n = lag_n, type = "lag"), 
+         by = recipient_id, 
+         .SDcols = var]
+    }
+  }
+  
+  return(dt)
+}
+# apply function
+treatment_dt <- as.data.table(treatment)[, .SD, .SDcols = recipient_id:fast_large_dummy]
+data_lag_corr <- create_lagged_variables(treatment_dt)
+
+# all contemporary events
+data_lag_corr |> 
+  select(ends_with("dummy")) |> 
+  correlation() |> 
+  summary()
+
+# all events
+data_lag_corr |> 
+  select(starts_with("event_dummy")) |> 
+  correlation() |> 
+  summary()
+  # slow-onset events
+data_lag_corr |> 
+  select(starts_with("slow_event")) |> 
+  correlation() |> 
+  summary()
+  # fast-onset
+data_lag_corr |> 
+  select(starts_with("fast_event")) |> 
+  correlation() |> 
+  summary()
+
+# large events
+data_lag_corr |> 
+  select(starts_with("large_dummy")) |> 
+  correlation() |> 
+  summary()
+# large slow-onset events
+data_lag_corr |> 
+  select(starts_with("slow_large")) |> 
+  correlation() |> 
+  summary()
+# large fast-onset
+data_lag_corr |> 
+  select(starts_with("fast_large")) |> 
+  correlation() |> 
+  summary()
+
+```
+
+```{r cov_call_corr}
+
+correlation(treatment[c('event_dummy', 'call_dummy')])
+correlation(treatment[c('slow_event_dummy', 'call_dummy')])
+correlation(treatment[c('fast_event_dummy', 'call_dummy')])
+
+xtabs(~event_dummy+call_dummy, data = treatment)
+xtabs(~event_dummy+appeal_dummy, data = treatment)
+xtabs(~event_dummy+declaration_dummy, data = treatment)
+
+xtabs(~fast_event_dummy+call_dummy, data = treatment)
+xtabs(~fast_event_dummy+appeal_dummy, data = treatment)
+xtabs(~fast_event_dummy+declaration_dummy, data = treatment)
+
+xtabs(~slow_event_dummy+call_dummy, data = treatment)
+xtabs(~slow_event_dummy+appeal_dummy, data = treatment)
+xtabs(~slow_event_dummy+declaration_dummy, data = treatment)
+
+data_emdat |> 
+  select(dis_no, classification_key, country, declaration) |> 
+  filter(declaration=='Yes')
+```
+
+```{r}
+
+did_means(commit_dummy+commit_state_dummy+commit_nonstate_dummy~large_dis_dummy, data)
+
+did_means(commit+commit_state+commit_nonstate~large_dis_dummy, data)
+
+# outcome: dummy
+data |> 
+  select(commit_dummy, commit_state_dummy, commit_nonstate_dummy,
+         large_dis_dummy) |> 
+  tbl_summary(by = large_dis_dummy,
+              statistic = ~ "{n} / {N} ({p}%)") |> 
+  add_overall() |>
+  add_p() |> 
+  add_difference()
+# treatment: flood
+data |> 
+  select(commit_dummy, commit_state_dummy, commit_nonstate_dummy,
+         large_flood_dummy) |> 
+  tbl_summary(by = large_flood_dummy,
+              statistic = ~ "{n} / {N} ({p}%)") |> 
+  add_overall() |>
+  add_p() |> 
+  add_difference()
+# treatment: drought
+data |> 
+  select(commit_dummy, commit_state_dummy, commit_nonstate_dummy,
+         large_drought_dummy) |> 
+  tbl_summary(by = large_drought_dummy,
+              statistic = ~ "{n} / {N} ({p}%)") |> 
+  add_overall() |>
+  add_p() |> 
+  add_difference()
+
+# outcome: continuous, in logs, positive values only
+data |> 
+  mutate(across(all_of(c("commit", "commit_state", "commit_nonstate")), 
+                ~ifelse(. > 0, log(.), NA))) |> 
+  select(commit, commit_state, commit_nonstate,
+         large_dis_dummy) |> 
+  tbl_summary(by = large_dis_dummy) |> 
+  add_overall() |>
+  add_p() |> 
+  add_difference()
+# treatment: flood
+data |> 
+  mutate(across(all_of(c("commit", "commit_state", "commit_nonstate")), 
+                ~ifelse(. > 0, log(.), NA))) |> 
+  select(commit, commit_state, commit_nonstate,
+         large_flood_dummy) |> 
+  tbl_summary(by = large_flood_dummy) |> 
+  add_overall() |>
+  add_p() |> 
+  add_difference()
+# treatment: drought
+data |> 
+  mutate(across(all_of(c("commit", "commit_state", "commit_nonstate")), 
+                ~ifelse(. > 0, log(.), NA))) |> 
+  select(commit, commit_state, commit_nonstate,
+         large_drought_dummy) |> 
+  tbl_summary(by = large_drought_dummy) |> 
+  add_overall() |>
+  add_p() |> 
+  add_difference()
+
+# outcome: continuous, in logs, keep positive values only and add 1 (1 000 USD)
+data |> 
+  mutate(across(all_of(c("commit", "commit_state", "commit_nonstate")), 
+                ~ifelse(. >= 0, log(1 + .), NA))) |> 
+  select(commit, commit_state, commit_nonstate,
+         large_dis_dummy) |> 
+  tbl_summary(by = large_dis_dummy) |> 
+  add_overall() |>
+  add_p() |> 
+  add_difference()
+
+# outcome: continuous, in logs, keep values > 1 000 USD only
+data |> 
+  mutate(across(all_of(c("commit", "commit_state", "commit_nonstate")), 
+                ~ifelse(. >= 1, log(.), NA))) |> 
+  select(commit, commit_state, commit_nonstate,
+         large_dis_dummy) |> 
+  tbl_summary(by = large_dis_dummy) |> 
+  add_overall() |>
+  add_p() |> 
+  add_difference()
+```
+
+# 2 Covariates
+
+## Time-varying
+
+## Time-invariant
+
+### Region
+
+```{r}
+
+reg <- merge(data, cov_region, 
+      by = c("recipient_id", "recipient_name"), 
+      all.x = TRUE)
+
+# treatment
+reg |> 
+  correlation(
+    select = c("large_dis_dummy", "large_flood_dummy", "large_drought_dummy", "large_storm_dummy"),
+    select2 = c("asia", "africa", "lac")
+  ) |> 
+  summary()
+
+# outcome
+reg |> 
+  correlation(
+    select = c("commit_dummy", "commit_state_dummy", "commit_nonstate_dummy",
+               "commit", "commit_state", "commit_nonstate"),
+    select2 = c("asia", "africa", "lac")
+  ) |> 
+  summary()
+```
+
+### Income group
+
+```{r}
+
+inc <- merge(data, cov_inc, 
+      by = c("recipient_id", "recipient_name", "year"), 
+      all.x = TRUE)
+
+# treatment
+inc |> 
+  correlation(
+    select = c("large_dis_dummy", "large_flood_dummy", "large_drought_dummy", "large_storm_dummy"),
+    select2 = c("ldc", "lic", "lmic", "madct", "umics")
+  ) |> 
+  summary()
+
+# outcome
+inc |> 
+  correlation(
+    select = c("commit_dummy", "commit_state_dummy", "commit_nonstate_dummy",
+               "commit", "commit_state", "commit_nonstate"),
+    select2 = c("ldc", "lic", "lmic", "madct", "umics")
+  ) |> 
+  summary()
+```
+
+# 3 Estimation
+
+## 3.1 Point Estimates (constant TEs)
+
+```{r twfe_lpm}
+
+# Large 'climatic' slow-onset events
+etable(feols(
+    c(commit_dummy, commit_state_dummy, commit_nonstate_dummy) ~ 
+    slow_large_dummy |
+    sector_recipient_id + year,
+    data = df_large,
+    cluster = ~recipient_id
+  ))
+
+# Large 'climatic' fast-onset events
+etable(feols(
+    c(commit_dummy, commit_state_dummy, commit_nonstate_dummy) ~ 
+    fast_large_dummy |
+    sector_recipient_id + year,
+    data = df_large,
+    cluster = ~recipient_id
+  ))
+```
+
+```{r twfe_glm}
+
+# Large 'climatic' fast-onset events
+fast.twfe.glm <- feglm(
+    c(commit_dummy, commit_state_dummy, commit_nonstate_dummy) ~ 
+    fast_large_dummy |
+    sector_recipient_id + year,
+    data = df_large,
+    cluster = ~recipient_id,
+    binomial(link = "logit")
+  )
+
+etable(fast.twfe.glm)
+
+# Comment: only significant effects = commitments to non-State channels ~ 'large' fast-onset climatic events (positive).
+# Comment(2): many observations are lost.
+
+# coefficients
+model_parameters(fast.twfe.glm, exponentiate = TRUE)
+
+# comment: the presence of an external shock increases the likelihood of nonzero commitments through non-State channels by a factor of 1.16.
+# Probability = 1.16 / (1 + 1.16) = 0.538
+# on average, there is a 53.8% chance of nonzero commitments given the presence of an external shock.
+```
+
+### Lagged dependent variable.
+
+```{r}
+
+# Lagged Dependent Variable (LDV)
+feglm(
+    c(commit_dummy, commit_state_dummy, commit_nonstate_dummy) ~ 
+    fast_large_dummy + sw0(l(commit_dummy, 1)) |
+    sector_recipient_id + year,
+    data = pdat,
+    cluster = ~recipient_id,
+    binomial(link = "logit")
+  )
+# Comment: LDV's coef is significant and positive; (ii) treatment's coeff becomes significant w/ LDV.
+
+# Unit-specific Linear Time Trend
+
+```
+
+### Robustness checks
+
+-   Choice of fixed effects.
+
+```{r}
+
+# sector_id^recipient_id > sector_id + recipient_id
+
+feols_FEs <- feols(
+    c(commit_dummy, commit_state_dummy, commit_nonstate_dummy) ~ 
+    large_dummy |
+    sw(sector_id^recipient_id, sector_id + recipient_id) + year,
+    data = panel_data,
+    cluster = ~recipient_id
+  )
+
+
+etable(feols_FEs, fitstat = ~ n + r2 + ar2 + wr2 + aic + rmse + bic + f + wf)
+
+```
+
+-   Unit-specific (linear) trends
+
+Account for distinct trends in aid flows over time (baseline trajectory), regardless of treatment. Capture long-term unit-specific dynamics, structural trends. Manage non-stationary trends in aid allocation; upward or downward trends over time, unrelated to the treatment. Deal with global or regional factors: allow each country to respond differently to these shocks. Reduce potential bias introduced by time-varying unobserved factors that influence both the treatment and the outcome. help eliminate ommitted variable bias. Limit: assume *linear* trends.
+
+```{r}
+
+etable(
+  feols(
+    c(commit_dummy, commit_state_dummy, commit_nonstate_dummy) ~ 
+    large_dummy |
+    sector_id[year] + sector_id^recipient_id + year,
+    data = panel_data,
+    cluster = ~recipient_id
+  ), 
+  fitstat = ~ n + r2 + ar2 + wr2 + aic + rmse + bic + f + wf
+  )
+
+# no difference in results for large_dummy with and without varying slopes (sector_id).
+# however, better model performances with varying slopes
+
+etable(
+  feols(
+    c(commit_dummy, commit_state_dummy, commit_nonstate_dummy) ~ 
+    large_dummy |
+    recipient_id[year] + sector_id^recipient_id + year,
+    data = panel_data,
+    cluster = ~recipient_id
+  ), 
+  fitstat = ~ n + r2 + ar2 + wr2 + aic + rmse + bic + f + wf
+  )
+
+# model performance: recipient_id[year] > sector_id[year]
+
+etable(
+  feols(
+    c(commit_dummy, commit_state_dummy, commit_nonstate_dummy) ~ 
+    large_dummy |
+    sector_recipient_id[year] + sector_id^recipient_id + year,
+    data = panel_data,
+    cluster = ~recipient_id
+  ), 
+  fitstat = ~ n + r2 + ar2 + wr2 + aic + rmse + bic + f + wf
+  )
+
+```
+
+-   Lagged Dependent Variable (LDP)
+
+```{r}
+
+ldp <- drop_data |> 
+  select(recipient_id, sector_id, year, 
+         commit_dummy, commit_state_dummy, commit_nonstate_dummy, 
+         large_dummy) |> 
+  merge(cov_lag, by = c("recipient_id", "sector_id", "year"),
+        all.x = TRUE)
+
+etable(
+  feols(
+    c(commit_dummy, commit_state_dummy, commit_nonstate_dummy) ~ 
+    large_dummy + sw0(commit_dummy_l1, commit_log_l1) |
+    sector_id^recipient_id + year,
+    data = ldp,
+    cluster = ~recipient_id
+  ), 
+  fitstat = ~ n + r2 + ar2 + wr2 + aic + rmse + bic + f + wf
+  )
+
+## Comments:
+# both LDV vars are significant, 
+# sign: positive, except lagged size for total and State channels (non-significant in the latter case), i.e. higher commitment volume => lower probability to receive nonzero commitment next period
+# model performance: lagged outcome dummy > size
+
+# incl. sector-specific time-varying slope FEs: sector_id[year]
+etable(
+  feols(
+    c(commit_dummy, commit_state_dummy, commit_nonstate_dummy) ~ 
+    large_dummy + sw0(commit_dummy_l1, commit_log_l1) |
+    sector_id[year] + sector_id^recipient_id + year,
+    data = ldp,
+    cluster = ~recipient_id
+  ), 
+  fitstat = ~ n + r2 + ar2 + wr2 + aic + rmse + bic + f + wf
+  )
+
+```
+
+## 2.2 Dynamic Treatment Effects
+
+```{r}
+
+test <- feols(     
+  c(commit, commit_state, commit_nonstate) ~      
+  i(binning_time, treat, ref = c(-1, 999)) + i(recipient_id, year) |
+    sector_id^recipient_id + year,
+    data = twfe.es_flo_int_data,
+    panel.id = c("sector_recipient_id", "year"),
+    cluster = ~recipient_id
+  )
+
+# Event-study plots 
+iplot(summary(test[[1]]), ref.line = TRUE, pt.join = TRUE,       
+      main = "Event-Study: binary outcome",       
+      xlab = "Time to treatment") 
+
+iplot(summary(test[[2]]), ref.line = TRUE, pt.join = TRUE,       
+      main = "Event-Study: binary outcome (State delivery)",       
+      xlab = "Time to treatment") 
+
+iplot(summary(test[[3]]), ref.line = TRUE, pt.join = TRUE,       
+      main = "Event-Study: binary outcome (non-State delivery)",       
+      xlab = "Time to treatment")
+```
+
+**Heterogeneous TEs.**
+
+-   Constant
+
+-   Heterogeneous
+
+    -   Individuals
+
+    -   Groups
+
+    -   Time periods
+
+**Event Study.**
+
+-   **Treatment period**
+
+    -   the relative period 0 as the last pretreatment period
+
+    -   the relative period 1 as the first posttreatment period
+
+-   **Treatment window**
+
+    -   each of the first L years before treatment (excluding the year immediately preceding treatment)
+
+    -   each of the first L years after treatment
+
+-   **Binning**
+
+    -   L+1 or more years before treatment
+
+    -   L+1 or more years after treatment.
+
+Cf. [@schmidheiny2023] include all possible lags and leads (so that no treated observations instead act as controls), but binning some of these together near the endpoints of the window being studied.
+
+# 4 Attrition
+
+```{r}
+
+# treatment=large_dis_dummy
+lprop(xtabs(~ commit_dummy + large_dis_dummy, data = data))
+lprop(xtabs(~ commit_state_dummy + large_dis_dummy, data = data))
+lprop(xtabs(~ commit_nonstate_dummy + large_dis_dummy, data = data))
+
+# treatment=flood
+lprop(xtabs(~ commit_state_dummy + large_flood_dummy, data = data))
+lprop(xtabs(~ commit_nonstate_dummy + large_flood_dummy, data = data))
+# treatment=drought
+lprop(xtabs(~ commit_state_dummy + large_drought_dummy, data = data))
+lprop(xtabs(~ commit_nonstate_dummy + large_drought_dummy, data = data))
+
+```
+
+```{r}
+
+# sector ~ channel of delivery
+lprop(xtabs(~ broad_sector_name + commit_dummy, data = data))
+lprop(xtabs(~ broad_sector_name + commit_state_dummy, data = data))
+lprop(xtabs(~ broad_sector_name + commit_nonstate_dummy, data = data))
+
+```
+
+```{r}
+
+
+```

@@ -1,0 +1,404 @@
+---
+title: | 
+  | Beg or Bargain?
+  | The impact of climate extreme events on aid allocation
+subtitle: CERDI PhD Seminar
+format:
+  clean-revealjs:
+    self-contained: true
+html-math-method:
+  method: mathjax
+  url: "https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"
+author:
+  - name: Paul Vernus
+date: last-modified
+bibliography: refs.bib
+# suppress-bibliography: true
+editor: 
+  markdown: 
+    wrap: sentence
+---
+
+```{r}
+#| echo: false
+
+# Load pckg
+library(here)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(forcats)
+library(countrycode)
+library(panelView)
+library(gtsummary)
+library(gt)
+library(fixest)
+library(lpdid)
+
+# load data
+load(here("data", "data_sample.RData"))
+```
+
+## Motivation
+
+- *Frequency and intensity* of climate extremes will *rise*, even at +1.5°C [@ipcc2023c]
+- Already major *losses and damages*, especially in LMICs
+- Lack of *coordination* between relief and reconstruction efforts
+- Potential detrimental impacts on recipient aid *ownership*
+
+::: {.fragment}
+
+::: {.callout-tip}
+## Research question
+
+**What is the effect of climate-related extreme events on post-disaster aid allocation?**
+:::
+
+::: small-font
+- **Extreme events** = wet (heavy rainfall, floods) / dry (droughts) climate impact-drivers [@ipcc2023c]
+:::
+
+:::
+
+## This Paper
+
+**What I do**:
+
+- Link geolocalized disaster to meteorological data to build *hazard severity measures*
+- Consider both aid volume *and* composition (design, implementation) as outcomes
+- Estimate *dynamic* effects of hazard severity on aid outcomes
+
+**What I find**:
+
+- *Unstabilized* results
+- Preliminary results mostly *non-significant* on aid volume
+- *Revised* rainfall data coming soon
+
+## Related literature
+
+**Post-disaster foreign aid allocation** [@yang2008; @david2011; @becerra2014; @arezki2025]
+
+::: small-font
+- Look at both aid volume *and* composition
+- Use *physical* hazard severity measures
+- Consider recipient's *leader strategic behavior* as potential mechanisms
+:::
+
+**Aid composition** [@raschky2012; @dietrich2013; @knack2014] 
+
+::: small-font
+- Study *dynamic* effect of time-varying treatment
+- Combine aid design and implementation phases
+:::
+
+**Physical hazard severity measures** [@felbermayr2014; @dellmuth2021]
+
+::: small-font
+- Use *more granular* data (daily precipitation 0.1°)
+:::
+
+## Conceptual framework
+
+- Empirical results find overall positive impacts of disasters on aid
+  - Humanitarian > Development [@arezki2025]
+  - non-State > State channels of delivery [@raschky2012]
+
+::: {.fragment}
+- Mostly donor-centered mechanisms suggested in the literature, 
+  - *e.g., perception of needs, strategic interests, donor coordination, etc.*
+:::
+
+::: {.fragment}
+- However, situations where cost of accepting aid > opportunity cost of rejecting aid
+  - *Domestic*: low political accountability [@flores2013], punish domestic opponents [@dewaal2017]
+  - *International*: influence donors’ perceptions of the leader’s competence [@grossman2024], demonstrate self-sufficiency [@carnegie2021], limit foreign influence [@aidt2021]
+:::
+
+## Empirical specification {#emp-spec}
+
+::: {.callout-note}
+## Local projection Difference-in-Differences approach [@dube2023a]
+
+$y_{c,t+h}-y_{c,t-1} = \textcolor{blue}{\beta_h} \Delta D_{ct} + \delta^{h}_{t} + η X_{ct} + \epsilon_{ct}^{h}$
+:::
+
+::: small-font
+- $y_{c,t+h}-y_{c,t-1}$: change in the outcome (aid volume, % channel, % modality) for country *c* from year *t−1* to *t+h*
+- $\Delta D_{ct}$: binary treatment (extreme event occurrence) in country *c* at year *t*
+- $\delta^{h}_{t}$: year FEs specific to horizon *h*
+- $X_{ct}$: covariates, incl. region-specific year effects
+- Standard-errors clustered by country
+:::
+
+- **Observation window**: 2003-2018
+- **Units**: 158 countries (DAC Recipients)
+
+::: {.callout-caution}
+## Potential confounders
+Global and regional climate dynamics, local land-use changes
+:::
+
+## Variable construction
+
+### Outcomes
+
+::: small-font
+Source: OECD Creditor Reporting System (CRS), 2000-present
+:::
+
+::: {.fragment}
+- **Amount**: Official Development Assistance (ODA) yearly commitments, in million, constant US\$
+  - incl. humanitarian ODA
+  - excl. in-donor expenditures (e.g., refugee costs), administrative costs, and debt relief
+:::
+
+::: {.fragment}
+- **Design** *(Policy influence)*: % of ODA by modality category
+  - Budgetary support, core/pooled contributions, project-type interventions (incl. TA)
+:::
+
+::: {.fragment}
+- **Implementation** *(Technical control)*: % of ODA by channel of delivery
+  - State vs. non-State (NGOs, multilateral, private sector)
+:::
+
+## Variable construction
+
+### Treatment {#var-treat}
+
+- **Sources**:
+  i. EM-DAT/GDIS *geolocalized 'disaster'* events (2000-2018)
+  ii. MSWEP global *daily precipitation* data (1979-present)
+- **Main idea**:
+  - Distinguish hazards by *severity* ($\neq$ count events uniformly)
+  - Use *meteorological* grid-level data ($\neq$ estimated damages)
+  - Build *standardized* hazard severity measure (i.e., comparable across event types)
+  - Account for *seasonality* (monsoon $\neq$ *extreme* monsoon)
+
+## Extreme event binary treatment variable 
+
+![](img/fig-dellmuth-meth.jpg){width=80%}
+
+## Descriptive statistics
+
+::: {.panel-tabset}
+
+### Treat. X Country
+
+```{r}
+#| echo: false
+#| fig-height: 6
+#| fig-width: 10
+
+df_ext <- data_sample_iso |> 
+  dplyr::select(iso3c, year, D_Hs, region_agg) |> 
+  mutate(country = countrycode(sourcevar = iso3c, 
+                               origin = 'iso3c', 
+                               destination = 'country.name')) |> 
+  mutate(country = ifelse(iso3c=="XXK", "Kosovo", country)) |> 
+  summarize(n_D_Hs = sum(D_Hs, na.rm = T), .by = country) |> 
+  slice_max(n_D_Hs, n = 20) |> 
+  arrange(desc(n_D_Hs))
+
+ggplot(df_ext, aes(x = reorder(country, n_D_Hs), y = n_D_Hs)) +
+  geom_bar(stat = 'identity', fill = '#73AE80') +
+  labs(title = 'Top 20 countries by extreme event occurence, 2003-2018',
+       x = 'Country',
+       y = 'Number of events',
+       caption = 'Source: GDIS') + 
+  theme_minimal() +
+  theme(axis.text.x = element_text(hjust = 1)) +
+  coord_flip()
+```
+
+### Treat. X Year
+
+```{r}
+#| echo: false
+#| fig-height: 6
+#| fig-width: 10
+
+df_dis <- data_sample_iso |> 
+  dplyr::select(iso3c, year, D_Hs, region_agg) |> 
+  summarize(n_D_Hs = sum(D_Hs, na.rm = T), .by = year) |> 
+  slice_max(n_D_Hs, n = 20) |> 
+  arrange(year)
+
+ggplot(df_dis, aes(x = factor(year), y = n_D_Hs)) +
+  geom_bar(stat = 'identity', fill = '#73AE80') +
+  labs(title = 'Frequency of extreme events by year',
+       x = 'Year',
+       y = 'Number of events',
+       caption = 'Source: GDIS') + 
+  theme_minimal() +
+  theme(axis.text.x = element_text(hjust = 1))
+```
+
+### Treat.Reg
+
+```{r}
+#| echo: false
+
+data_sample_iso |>
+  summarize(treat = max(D_Hs_ever_treated), .by = c(iso3c, region_agg)) |> 
+  mutate(treat = ifelse(treat==1, "Treated", "Never treated")) |> 
+  tbl_summary(by = treat, 
+              include = region_agg,
+              label = region_agg ~ "Region"
+  ) |> 
+  add_overall(last = TRUE) |> 
+  bold_labels() |> 
+  modify_spanning_header(all_stat_cols(stat_0 = FALSE) ~ "**Extreme event**")
+              
+```
+
+### Outc.Vol
+
+```{r}
+#| echo: false
+
+data_sample_iso |>
+  rename(Region = region_agg) |> 
+  group_by(Region)|>
+  summarize(
+    Min = min(Y),
+    Q1 = quantile(Y, 0.25),
+    Median = median(Y),
+    Mean = mean(Y),
+    Q3 = quantile(Y, 0.75),
+    Max = max(Y)) |> 
+  gt() |> 
+  fmt_number(columns = c(Min, Q1, Median, Mean, Q3, Max), decimals = 2) |>
+  tab_header(
+    title = "Country-level yearly ODA flows, by Region, 2003-2018",
+    subtitle = "Source: OECD CRS"
+  ) |>
+  tab_options(table.width = pct(80))
+              
+```
+
+- *Censored* outcome with a *skewed* distribution
+
+:::
+
+## Baseline results
+
+```{r}
+#| include=FALSE
+
+data <- data_sample_iso |> 
+  dplyr::select(Y, D_Hs, D_Hs_first, iso3c, year, t, region_agg) |> 
+  mutate(log_Y = log(Y + .001))
+  
+lpdid(data, window = c(-9, 10),
+               y = "log_Y", treat_status = "D_Hs_first",
+               unit_index = "iso3c", time_index = "year",
+               controls =  ~ 1 | region_agg^year,
+               cluster	= "iso3c") -> lpdid_abs
+
+lpdid_nabs <- lpdid(data, window = c(-7, 10),
+               y = "log_Y", treat_status = "D_Hs",
+               unit_index = "iso3c", time_index = "year",
+               nonabsorbing_lag = 3,
+               controls =  ~ 1 | region_agg^year,
+               cluster	= "iso3c") -> lpdid_nabs
+``` 
+
+```{r}
+#| echo: false
+
+plot_lpdid(lpdid_abs, x.shift = -.1, ylim = c(-2,2), main = "LP-DID: Aid volume (all)")
+plot_lpdid(lpdid_nabs, add = T, col = "dodgerblue", x.shift = 0)
+
+abline(h = mean(c(15, 15, 35)), lty = 2)
+legend("bottomleft", legend = c("Absorbing", "Non-abs. (K=3)"), bty = "n",
+       col = c("grey", "dodgerblue"), 
+       pch = 19, cex = .8, ncol = 2
+       )
+
+```
+
+:::aside
+n.b. *not stabilized* (*revised* rainfall data coming soon)
+:::
+
+## Robustness checks
+
+### Treatment
+
+::: small-font
+✓ **Deviation cut-off** (non-linearity assumption): use the 95^th^ or 99^th^ percentiles
+
+⨉ **Time-scale**: construct *year*-specific or *month*-specific distributions instead of day-specific
+
+⨉ **Baseline climate** (climate belief assumption): choose 20-year or 30-year long historical norms
+:::
+
+### Outcome
+
+::: small-font
+⨉ **Amount**: ODA disbursements
+:::
+
+### Estimation
+
+::: small-font
+✓ **Lag length (stabilization period)**: no lag, 3-year, 5-year lags
+
+✓ **Absorbing**: single (first-treated cohorts) and multiple (short/long-term) treatments [@deryugina2017a]
+
+✓ **Estimators**: (*linear*) counterfactual/imputation estimators [@borusyak2024a; @liu2024a], Generalized SCM [@xuGeneralizedSyntheticControl2017]; (*nonlinear*) TWFE PPML, ETWFE [@wooldridge2023a]
+
+⨉ **Multinomial models**: alternative estimators, e.g., fractional multinomial logit model [@negi2024], SCM for Proportions (multinomial link) [@bogatyrev2025]
+:::
+
+## Heterogeneity
+
+### Treatment
+
+::: small-font
+✓ **Exposure**: population, agricultural land, built-up area
+
+⨉ **Climate extremes**: wet (flood) vs. dry (drought) events
+:::
+
+### Outcome
+
+::: small-font
+✓ **Category**: humanitarian vs. development (Gov. & Civil society, Infrastructures)
+
+⨉ **Channels of delivery**: NGO, Multi., Private
+
+⨉ **Financial instruments**: grants vs. loans
+
+⨉ **Donors**: bilateral vs. multilateral
+:::
+
+### Recipient country
+
+::: small-font
+✓ **Gov. responsiveness**: State of Emergency and/or request for international assistance
+
+⨉ **Domestic politics**: political regime and internal social conflict
+
+⨉ **Resources**: income group, government's fiscal and institutional capacity, Chinese aid
+:::
+
+## Conclusion
+
+- Study post-disaster aid allocation
+  - Consider wet/dry climate extremes (floods/droughts)
+  - Estimate dynamic effect on aid volume and composition
+- Non-significant preliminary results on aid volume
+- Potential explanations
+    - identification strategy: rainfall extremes $\nRightarrow$ flooding ‘disasters’
+    - variable construction meth.: alternative rainfall 'extremes' measures
+    - level of analysis: miss sector-level effects and reallocation
+- Revised precipitation data coming soon
+
+# Annexes
+
+## References
+
+::: {#refs}
+:::

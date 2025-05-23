@@ -1,0 +1,128 @@
+---
+title: "Untitled"
+format: docx
+editor: visual
+bibliography: references.bib
+---
+
+```{r, load_pckg}
+
+source(here::here('scripts', 'library.R'))
+```
+
+```{r load_data}
+
+# outcome
+load(here('data', 'data_outcome.RData'))
+# treatment
+load(here('data', 'data_treatment.RData'))
+# covariates
+load(here('data', 'data_covariate.RData'))
+```
+
+# Treatment
+
+```{r}
+
+treatment_iso_sample <- treatment_iso |> 
+  left_join(treatment_iso_first, by = c("iso3c", "year")) |> 
+  left_join(treatment_iso_first_rel, by = c("iso3c", "year")) |>
+  left_join(treatment_iso_cum, by = c("iso3c", "year"))
+```
+
+# Outcome
+
+```{r outcome_type}
+
+outcome_type <- outcome |> 
+# Category  
+  mutate(
+    humanitarian = ifelse(grepl("^720|^730", purpose_code), 1, 0),
+    gov_peace = ifelse(grepl("^15[0-2]", purpose_code), 1, 0),
+    development = ifelse(grepl("^(1[1-4]|160|[2-4][0-9]|5[2-3]|740)", purpose_code), 1, 0),
+    budgetary = ifelse(grepl("^510", purpose_code), 1, 0)
+  ) |> 
+  mutate(category = case_when(
+    grepl("^720|^730", purpose_code) ~ "Humanitarian",
+    grepl("^15[0-2]", purpose_code) ~ "Gov. & Peace",
+    grepl("^(1[1-4]|160|[2-4][0-9]|5[2-3]|740)", purpose_code) ~ "Development",
+    grepl("^510", purpose_code) ~ "Budgetary",
+  ))
+```
+
+```{r outcome_year}
+
+outcome_year <- outcome_type |> 
+  filter(year %in% c(2003:2018)) |>  
+# NOTE: change according to data constraints in treatment
+# Create relative time variable
+  mutate(t = year - min(year) + 1) |> 
+  relocate(t, .after = year)
+```
+
+```{r outcome_sect}
+
+outcome_sect <- outcome_year |> 
+  select(iso3c, purpose_code, category, year, commit, commit_dummy) |> 
+  mutate(iso_sect_id = paste0(iso3c, "_", purpose_code)) |> 
+  relocate(iso_sect_id, .after = purpose_code)
+```
+
+```{r outcome_iso}
+
+## Alternative sample: country-year level
+
+# Aggregate
+outcome_iso <- summarize(outcome_year,
+          Y = sum(commit, na.rm = T),
+          .by = c("iso3c", "year", "t")
+          ) |> 
+  mutate(Y_d = ifelse(Y > 0, 1, 0))
+
+# By category
+outcome_iso_cat <- summarize(outcome_year,
+          Y = sum(commit, na.rm = T),
+          .by = c("iso3c", "year", "t", "category")
+          ) |> 
+  mutate(Y_d = ifelse(Y > 0, 1, 0))
+
+```
+
+```{r}
+
+## Multinomial
+```
+
+# Covariates
+
+# Sample
+
+```{r sample_data}
+
+## Country-Year
+data_sample_iso <- left_join(outcome_iso, treatment_iso_sample, 
+                                 by = c("iso3c", "year")) |> 
+  mutate(across(matches("^D_(L|H)"), \(x) replace_na(x, 0))) |> 
+  mutate(across(matches("^cohort"), \(x) replace_na(x, 9999))) |> 
+  left_join(data_covariate, by = c("iso3c", "year"))
+
+# By category
+data_sample_iso_cat <- left_join(outcome_iso_cat, treatment_iso_sample, 
+                                 by = c("iso3c", "year")) |> 
+  mutate(across(matches("^D_(L|H)"), \(x) replace_na(x, 0))) |> 
+  mutate(across(matches("^cohort"), \(x) replace_na(x, 9999))) |> 
+  left_join(data_covariate, by = c("iso3c", "year"))
+
+## Country-Sector-Year
+data_sample_sect <- left_join(outcome_sect, treatment_iso_sample, by = c("iso3c", "year")) |> 
+  mutate(across(matches("^D_(L|H)"), \(x) replace_na(x, 0))) |> 
+  mutate(across(matches("^cohort"), \(x) replace_na(x, 9999))) |> 
+  left_join(data_covariate, by = c("iso3c", "year"))
+
+```
+
+```{r save}
+
+save(data_sample_iso, data_sample_iso_cat, data_sample_sect, 
+     file = here("data", "data_sample.RData"))
+```

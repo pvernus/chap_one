@@ -1,0 +1,259 @@
+---
+title: "Untitled"
+format: docx
+editor: visual
+bibliography: references.bib
+---
+
+```{r, load_pckg, recip, include=FALSE, cache=FALSE}
+
+# read an external script
+knitr::read_chunk(here::here('scripts', 'library.R'))
+# read chunck
+source(here::here('scripts', 'library.R'))
+
+```
+
+```{r load_data}
+
+load(here("data", "202410_recip_data.RData"))
+```
+
+# Extensive margin
+
+# Imputation Method
+
+Contrary to standard TWFE, imputation/counterfactual methods can accommodate heterogeneous treatment effects. They also allow treatment reversal, contrary to other HTE-DID methods.
+
+However, their identifying assumptions rule out anticipation effects or carryover effects (e.g. no arrows from $D_t$ to $Y_{t−1}$ or $Y_{t+1}$), feedback (e.g. no arrow from $Y_{t −1}$ to $D_t$ ) and lagged dependent variables (no arrow from $Y_{t−1}$ to $Y_t$ ).
+
+Besides, the event study method for the imputation estimato restimates the contemporaneous (dynamic) treatment effect, not the j-lagged or cumulative effects.
+
+Cf. [@liu2024]
+
+## Point Estimates
+
+```{r twfe_fect}
+
+# all
+twfe.fect <- fect(Y = "commit_dummy", D = "large_dummy", 
+                  data = panel_data, 
+                  method = "fe", 
+                  index = index, 
+                  se = TRUE, parallel = TRUE, seed = 1234, force = "two-way")
+print(twfe.fect$est.avg)
+
+# state channels
+twfe.fect_state <- fect(Y = "commit_state_dummy", D = "large_dummy", 
+                  data = panel_data, 
+                  method = "fe", 
+                  index = index, 
+                  se = TRUE, parallel = TRUE, seed = 1234, force = "two-way")
+print(twfe.fect_state$est.avg)
+
+# non-state channels
+twfe.fect_nonstate <- fect(Y = "commit_nonstate_dummy", D = "large_dummy", 
+                  data = panel_data, 
+                  method = "fe", 
+                  index = index, 
+                  se = TRUE, parallel = TRUE, seed = 1234, force = "two-way")
+print(twfe.fect_nonstate$est.avg)
+
+# Comment: the impact of 'large_dummy' is only significant for non-State commitments
+
+```
+
+## Dynamic Treatment Effects
+
+```{r}
+
+fect.output <- as.matrix(twfe.fect$est.att)
+# the estimated dynamic treatment effects
+print(fect.output)
+# Event Study Plot
+plot(twfe.fect, stats = "F.p")
+# period-wise ATTs relative to the exit of treatments
+plot(twfe.fect, stats = "F.p", type = 'exit')
+
+## State channels
+fect.output_state <- as.matrix(twfe.fect_state$est.att)
+# the estimated dynamic treatment effects
+print(fect.output_state)
+# Event Study Plot
+plot(twfe.fect_state, stats = "F.p")
+# period-wise ATTs relative to the exit of treatments
+plot(twfe.fect_state, stats = "F.p", type = 'exit')
+
+## Non-State channels
+fect.output_nonstate <- as.matrix(twfe.fect_nonstate$est.att)
+# the estimated dynamic treatment effects
+print(fect.output_nonstate)
+# Event Study Plot
+plot(twfe.fect_nonstate, stats = "F.p")
+# period-wise ATTs relative to the exit of treatments
+plot(twfe.fect_nonstate, stats = "F.p", type = 'exit')
+
+# Note: F-test for the null hypothesis of zero residual averages in the pre-treatment periods
+# p-value > 0.1 implies that the data don't show a significant difference from zero pre-treatment, which is what we'd ideally want to assume when analyzing treatment effects.
+
+# Comment: only TEs for non-State channel outcomes are positive and significant. However, the F-test is < 0.1 which suggests nonzero residual averages in the pre-treatment periods.
+
+```
+
+## Diagnostic Tests
+
+### Placebo test
+
+```{r}
+
+# Note: utilizes a subset of the data by removing observations in a specified range for model fitting, and subsequently assessing whether the estimated average treatment effect (ATT) in this range is statistically significant from zero.
+
+# placebo.period = c(-2, 0) indicates that the placebo periods will consist of the three periods preceding the onset of treatment.
+
+out.fect.p <- fect(Y = "commit_dummy", D = "large_dummy", 
+                   data = panel_data, 
+                   index = index,
+                   method = 'fe', force = "two-way",
+                   se = TRUE, parallel = TRUE, seed = 1234,  
+                   placeboTest = TRUE, placebo.period = c(-2,0))
+p.placebo <- plot(out.fect.p, proportion = 0.1, stats = "placebo.p")
+p.placebo
+
+# State
+out.fect.p_state <- fect(Y = "commit_state_dummy", D = "large_dummy", 
+                   data = panel_data, 
+                   index = index,
+                   method = 'fe', force = "two-way",
+                   se = TRUE, parallel = TRUE, seed = 1234,  
+                   placeboTest = TRUE, placebo.period = c(-2,0))
+p.placebo_state <- plot(out.fect.p_state, proportion = 0.1, stats = "placebo.p")
+p.placebo_state
+
+# non-State
+out.fect.p_nonstate <- fect(Y = "commit_nonstate_dummy", D = "large_dummy", 
+                   data = panel_data, 
+                   index = index,
+                   method = 'fe', force = "two-way",
+                   se = TRUE, parallel = TRUE, seed = 1234,  
+                   placeboTest = TRUE, placebo.period = c(-2,0))
+p.placebo_nonstate <- plot(out.fect.p_nonstate, proportion = 0.1, stats = "placebo.p")
+p.placebo_nonstate
+
+```
+
+### Carryover Effects
+
+```{r}
+
+# Rather than obscuring a few periods immediately preceding the onset of treatment, this method involves obscuring a few periods immediately following the termination of treatment.
+# If carryover effects do not exist, one would expect the average prediction error in these periods to be close to zero.
+#  test whether the estimated Average Treatment Effect (ATT) in this range is significantly different from zero.
+
+out.fect.c <- fect(Y = "commit_dummy", D = "large_dummy", 
+                   data = panel_data, 
+                   index = index,
+                   method = 'fe', force = "two-way",
+                   se = TRUE, parallel = TRUE, seed = 1234,  
+                   carryoverTest = TRUE, carryover.period = c(1,2))
+p.carryover <- plot(out.fect.c,  stats = "carryover.p")
+p.carryover
+
+# State
+out.fect.c_state <- fect(Y = "commit_state_dummy", D = "large_dummy", 
+                   data = panel_data, 
+                   index = index,
+                   method = 'fe', force = "two-way",
+                   se = TRUE, parallel = TRUE, seed = 1234,  
+                   carryoverTest = TRUE, carryover.period = c(1,2))
+p.carryover_state <- plot(out.fect.c_state,  stats = "carryover.p")
+p.carryover_state
+
+# non-State
+out.fect.c_nonstate <- fect(Y = "commit_nonstate_dummy", D = "large_dummy", 
+                   data = panel_data, 
+                   index = index,
+                   method = 'fe', force = "two-way",
+                   se = TRUE, parallel = TRUE, seed = 1234,  
+                   carryoverTest = TRUE, carryover.period = c(1,2))
+p.carryover_nonstate <- plot(out.fect.c_nonstate,  stats = "carryover.p")
+p.carryover_nonstate
+```
+
+# Intensive margin
+
+```{r intensive_marg}
+
+## test for dominance assumptions
+
+# define selection compliance types, cf. Huber (2023), p.296
+# we define selection compliance types in terms of selection as a function of the treatment.
+compliance <- drop_data |> 
+  select(year, recipient_id, sector_id, 
+         commit, commit_dummy, large_dummy) |> 
+  mutate(compliance = ifelse(commit_dummy == large_dummy, 1, 0)) |> 
+  mutate(selection_compliance = case_when(
+    sum(commit_dummy) == n_distinct(year) ~ 'always selected',
+    sum(commit_dummy) == 0 ~ 'never selected',
+    sum(compliance) == n_distinct(year) ~ 'selection compliers',
+    sum(compliance) == 0 ~ 'selection defiers',
+    .default = 'other'
+  ), .by = c("recipient_id", "sector_id"))
+
+## dominance assumption
+# on the ordering of potential outcomes across selection compliance types
+# = the average potential wage of the always selected weakly dominates that of compliers under either treatment state
+
+# outcome distributions comparison
+compliance |> 
+  filter(selection_compliance %in% c('always selected', 'selection compliers')) |> 
+  ggplot(aes(x=log(commit))) +
+  geom_density(aes(fill=selection_compliance), alpha=.5) +
+  theme_light()
+
+# average outcomes comparison
+compliance |> 
+  filter(selection_compliance %in% c('always selected', 'selection compliers')) |>
+  summarize(avg_outcome = mean(commit, na.rm = T),
+            .by = c('large_dummy', 'selection_compliance')) |> 
+  arrange(large_dummy) |> 
+  knitr::kable()
+
+## monotonicity of selection in the treatment
+# the average potential outcome of the always selected weakly dominates that of compliers under either treatment state
+# cf. Lee (2009)
+
+# count each type among (sector-recipient) units
+distinct(compliance, recipient_id, sector_id, selection_compliance) |> 
+  count(selection_compliance) |> 
+  knitr::kable()
+
+# Note: when 'commit_dummy_thresh' is used, only one defier unit is added (n=2). The main effect is on the number of units moving from always treated to 'other' compliance type units.
+
+```
+
+```{r bounds}
+
+# estimate worst case bounds for the ATE of a randomized treatment  under sample selection (or outcome attrition)
+treat = data$large_dummy
+outc = data$commit
+selec = data$commit_dummy>0
+
+dat=data.frame(treat, selec, outc)
+outc[selec==0]=NA
+dat=data.frame(treat, outc, selec)
+
+# ERROR BECAUSE SOME OBS. HAVE MISSING VALUES: WHY??
+results=experiment::ATEbounds( outc~treat, data=dat )
+
+results$bounds
+results$bonf.ci
+
+# tighten the bounds by imposing monotonicity of selection O in the treatment D
+results=leebounds::leebounds(dat)
+results$lower_bound
+results$upper_bound
+
+
+# TBD: assumption of random treatment assignment
+# Solutions: (i) covariates; (ii) weighting
+```

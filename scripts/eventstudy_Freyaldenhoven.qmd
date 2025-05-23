@@ -1,0 +1,443 @@
+---
+title: "Freyaldenhoven et al. (2021)"
+format: html
+editor: visual
+---
+
+See: <https://github.com/JMSLab/eventstudyr/tree/main>
+
+```{r load_pckg}
+
+source(here::here('scripts', 'library.R'))
+```
+
+```{r load_data}
+
+load(here("data", "202410_recip_data.RData"))
+```
+
+# Data
+
+```{r data_reg}
+
+data_reg <- merge(data, cov_region, by = "recipient_id")
+```
+
+```{r flow_category}
+
+# Country-Purpose-Year level
+data_iso_sect_flcat <- data_reg |> 
+  mutate(flow_category = case_when(
+    grepl("^720|^730", sector_code) ~ "humanitarian",
+    grepl("^15[0-2]", sector_code) ~ "gov_peace",
+    grepl("^(1[1-4]|160|[2-4][0-9]|5[2-3]|740)", sector_code) ~ "development",
+    grepl("^510", sector_code) ~ "budgetary",
+    .default = "other")) |> 
+# filter(flow_category == "other") # should be null 
+  relocate(flow_category, .after = sector_name)
+
+# Country-Flow.category-Year level
+data_iso_flcat <- summarize(data_iso_sect_flcat,
+          y = sum(commit, na.rm = T),
+          across(commit_dummy:large_heatw_dummy, max),
+          .by = c(year, t, iso3c, flow_category))
+
+```
+
+```{r y_}
+
+# Country-Purpose-Year level
+data_iso_sect_flcat <- data_iso_sect_flcat |> 
+  mutate(
+    y_null = ifelse(commit <= 0, .001, commit),
+    y_log = ifelse(y_null > 0, log(y_null), y_null),
+    y_ext = ifelse(commit > 0, 1, 0),
+    y_int = ifelse(y_null == .001, NA, y_log)    
+  )                 
+
+# Country-Flow.category-Year level
+data_iso_flcat <- data_iso_flcat |> 
+  mutate(
+    y_null = ifelse(y <= 0, .001, y),
+    y_log = ifelse(y_null > 0, log(y_null), y_null),
+    y_ext = ifelse(y > 0, 1, 0),
+    y_int = ifelse(y_null == .001, NA, y_log)    
+  )
+```
+
+# Event-study
+
+## Country-purpose level split by category
+
+```{r FAIL}
+
+# humanitarian
+EventStudyPlot(
+  estimates = 
+    EventStudy(
+  estimator = "OLS",
+  data = data_iso_sect_flcat[data_iso_sect_flcat$flow_category=="humanitarian", ],
+  outcomevar = "y_ext",
+  policyvar = "large_dis_dummy",
+  idvar = "iso_purp_id",
+  timevar = "t",
+  post = 3,
+  pre = 0)
+) + labs("")
+
+# gov_peace
+EventStudyPlot(
+  estimates = 
+    EventStudy(
+  estimator = "OLS",
+  data = data_iso_sect_flcat[data_iso_sect_flcat$flow_category=="gov_peace", ],
+  outcomevar = "y_ext",
+  policyvar = "large_dis_dummy",
+  idvar = "iso_purp_id",
+  timevar = "t",
+  post = 3,
+  pre = 0)
+)
+
+# development
+# FAIL: Erreur : impossible d'allouer un vecteur de taille 121.8 Go
+EventStudyPlot(
+  estimates = 
+    EventStudy(
+  estimator = "OLS",
+  data = data_iso_purp_flcat[data_iso_purp_flcat$flow_category=="development", ],
+  outcomevar = "y_ext",
+  policyvar = "large_dis_dummy",
+  idvar = "iso_purp_id",
+  timevar = "t",
+  post = 1, # lowest
+  pre = 0)
+)
+
+# budgetary
+EventStudyPlot(
+  estimates = 
+    EventStudy(
+  estimator = "OLS",
+  data = data_iso_purp_flcat[data_iso_purp_flcat$flow_category=="budgetary", ],
+  outcomevar = "y_ext",
+  policyvar = "large_dis_dummy",
+  idvar = "iso_purp_id",
+  timevar = "t",
+  post = 3,
+  pre = 0)
+)
+```
+
+## Country-sector level split by category
+
+```{r}
+
+# humanitarian
+EventStudyPlot(
+  estimates = 
+    EventStudy(
+  estimator = "OLS",
+  data = data_iso_sect_flcat[data_iso_sect_flcat$flow_category=="humanitarian", ],
+  outcomevar = "y_ext",
+  policyvar = "large_dis_dummy",
+  idvar = "iso_sect_id",
+  timevar = "t",
+  post = 3,
+  pre = 0)
+) + labs(title = "Humanitarian")
+
+# gov_peace
+EventStudyPlot(
+  estimates = 
+    EventStudy(
+  estimator = "OLS",
+  data = data_iso_purp_flcat[data_iso_purp_flcat$flow_category=="gov_peace", ],
+  outcomevar = "y_ext",
+  policyvar = "large_dis_dummy",
+  idvar = "iso_sect_id",
+  timevar = "t",
+  post = 3,
+  pre = 0)
+  ) + labs(title = "Gov. & Peace")
+
+# development
+EventStudyPlot(
+  estimates = 
+    EventStudy(
+  estimator = "OLS",
+  data = data_iso_purp_flcat[data_iso_purp_flcat$flow_category=="development", ],
+  outcomevar = "y_ext",
+  policyvar = "large_dis_dummy",
+  idvar = "iso_sect_id",
+  timevar = "t",
+  post = 3,
+  pre = 0)
+) + labs(title = "Development")
+
+# budgetary
+EventStudyPlot(
+  estimates = 
+    EventStudy(
+  estimator = "OLS",
+  data = data_iso_purp_flcat[data_iso_purp_flcat$flow_category=="budgetary", ],
+  outcomevar = "y_ext",
+  policyvar = "large_dis_dummy",
+  idvar = "iso_sect_id",
+  timevar = "t",
+  post = 3,
+  pre = 0)
+) + labs(title = "Budgetary")
+
+```
+
+## Country-level split by category
+
+```{r list}
+
+category <- list("humanitarian", "gov_peace", "development", "budgetary")
+
+titles <- list("Humanitarian", "Government & Civil Society + Conflict, Peace & Security", "Development", "Budgetary")
+```
+
+```{r all}
+
+map2(category, titles, \(x, y) {
+  # Subset the data for the specific category
+  subset_data <- data_iso_flcat[data_iso_flcat$flow_category == x, ]
+
+  # Apply the EventStudy function
+  res <- EventStudy(
+    estimator = "OLS",
+    data = subset_data,
+    outcomevar = "y_log",
+    policyvar = "large_dis_dummy",
+    idvar = "iso3c",
+    timevar = "t",
+    post = 3,
+    pre = 0
+  )
+  
+  # Plot Event-Study Plot
+  EventStudyPlot(res,
+               xtitle = "Event time",
+               ytitle = "Coefficient") + 
+       labs(title = y, subtitle = "All climate-related 'large' events")
+})
+```
+
+### Fast-onset
+
+```{r flood}
+
+map2(category, titles, \(x, y) {
+  # Subset the data for the specific category
+  subset_data <- data_iso_flcat[data_iso_flcat$flow_category == x, ]
+
+  # Apply the EventStudy function
+  res <- EventStudy(
+    estimator = "OLS",
+    data = subset_data,
+    outcomevar = "y_log",
+    policyvar = "large_flood_dummy",
+    idvar = "iso3c",
+    timevar = "t",
+    post = 2,
+    pre = 0
+  )
+  
+  # Plot Event-Study Plot
+  EventStudyPlot(res,
+               xtitle = "Event time",
+               ytitle = "Coefficient") + 
+       labs(title = y, subtitle = "'Large' Flood")
+})
+```
+
+```{r storm}
+
+map2(category, titles, \(x, y) {
+  # Subset the data for the specific category
+  subset_data <- data_iso_flcat[data_iso_flcat$flow_category == x, ]
+
+  # Apply the EventStudy function
+  res <- EventStudy(
+    estimator = "OLS",
+    data = subset_data,
+    outcomevar = "y_log",
+    policyvar = "large_storm_dummy",
+    idvar = "iso3c",
+    timevar = "t",
+    post = 2,
+    pre = 0
+  )
+  
+  # Plot Event-Study Plot
+  EventStudyPlot(res,
+               xtitle = "Event time",
+               ytitle = "Coefficient") + 
+       labs(title = y, subtitle = "'Large' Storm")
+})
+```
+
+### Slow-onset
+
+```{r drought}
+
+map2(category, titles, \(x, y) {
+  # Subset the data for the specific category
+  subset_data <- data_iso_flcat[data_iso_flcat$flow_category == x, ]
+
+  # Apply the EventStudy function
+  res <- EventStudy(
+    estimator = "OLS",
+    data = subset_data,
+    outcomevar = "y_log",
+    policyvar = "large_drought_dummy",
+    idvar = "iso3c",
+    timevar = "t",
+    post = 2,
+    pre = 0
+  )
+  
+  # Plot Event-Study Plot
+  EventStudyPlot(res,
+               xtitle = "Event time",
+               ytitle = "Coefficient") + 
+       labs(title = y, subtitle = "'Large' Drought")
+})
+     
+```
+
+```{r heatw}
+
+map2(category, titles, \(x, y) {
+  # Subset the data for the specific category
+  subset_data <- data_iso_flcat[data_iso_flcat$flow_category == x, ]
+
+  # Apply the EventStudy function
+  res <- EventStudy(
+    estimator = "OLS",
+    data = subset_data,
+    outcomevar = "y_log",
+    policyvar = "large_heatw_dummy",
+    idvar = "iso3c",
+    timevar = "t",
+    post = 2,
+    pre = 0
+  )
+  
+  # Plot Event-Study Plot
+  EventStudyPlot(res,
+               xtitle = "Event time",
+               ytitle = "Coefficient") + 
+       labs(title = y, subtitle = "'Large' Heat Wave")
+})
+     
+```
+
+## Margins
+
+```{r flood_ext}
+
+map2(category, titles, \(x, y) {
+  # Subset the data for the specific category
+  subset_data <- data_iso_flcat[data_iso_flcat$flow_category == x, ]
+
+  # Apply the EventStudy function
+  res <- EventStudy(
+    estimator = "OLS",
+    data = subset_data,
+    outcomevar = "y_ext",
+    policyvar = "large_flood_dummy",
+    idvar = "iso3c",
+    timevar = "t",
+    post = 2,
+    pre = 0
+  )
+  
+  # Plot Event-Study Plot
+  EventStudyPlot(res,
+               xtitle = "Event time",
+               ytitle = "Coefficient") + 
+       labs(title = y, subtitle = "'Large' Flood")
+})
+```
+
+```{r drought_ext}
+
+map2(category, titles, \(x, y) {
+  # Subset the data for the specific category
+  subset_data <- data_iso_flcat[data_iso_flcat$flow_category == x, ]
+
+  # Apply the EventStudy function
+  res <- EventStudy(
+    estimator = "OLS",
+    data = subset_data,
+    outcomevar = "y_ext",
+    policyvar = "large_drought_dummy",
+    idvar = "iso3c",
+    timevar = "t",
+    post = 2,
+    pre = 0
+  )
+  
+  # Plot Event-Study Plot
+  EventStudyPlot(res,
+               xtitle = "Event time",
+               ytitle = "Coefficient") + 
+       labs(title = y, subtitle = "'Large' Flood")
+})
+```
+
+```{r flood_int}
+
+map2(category, titles, \(x, y) {
+  # Subset the data for the specific category
+  subset_data <- data_iso_flcat[data_iso_flcat$flow_category == x, ]
+
+  # Apply the EventStudy function
+  res <- EventStudy(
+    estimator = "OLS",
+    data = subset_data,
+    outcomevar = "y_int",
+    policyvar = "large_flood_dummy",
+    idvar = "iso3c",
+    timevar = "t",
+    post = 2,
+    pre = 0
+  )
+  
+  # Plot Event-Study Plot
+  EventStudyPlot(res,
+               xtitle = "Event time",
+               ytitle = "Coefficient") + 
+       labs(title = y, subtitle = "'Large' Flood")
+})
+```
+
+```{r drought_int}
+
+map2(category, titles, \(x, y) {
+  # Subset the data for the specific category
+  subset_data <- data_iso_flcat[data_iso_flcat$flow_category == x, ]
+
+  # Apply the EventStudy function
+  res <- EventStudy(
+    estimator = "OLS",
+    data = subset_data,
+    outcomevar = "y_int",
+    policyvar = "large_drought_dummy",
+    idvar = "iso3c",
+    timevar = "t",
+    post = 2,
+    pre = 0
+  )
+  
+  # Plot Event-Study Plot
+  EventStudyPlot(res,
+               xtitle = "Event time",
+               ytitle = "Coefficient") + 
+       labs(title = y, subtitle = "'Large' Drought")
+})
+```

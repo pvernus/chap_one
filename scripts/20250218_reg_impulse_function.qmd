@@ -1,0 +1,500 @@
+---
+title: "Untitled"
+format: html
+editor: visual
+---
+
+```{r, load_pckg}
+
+source(here::here('scripts', 'library.R'))
+```
+
+```{r load_data}
+
+load(here("data", "data_sample.RData"))
+```
+
+```{r}
+
+summarize(data_sample_iso,
+          D_he_ms = sum(D_he_ms),
+          D_me_hs = sum(D_me_hs),
+          .by = year) |> 
+  arrange(desc(D_he_ms))
+
+summarize(data_sample_iso,
+          D_he_ms = sum(D_he_ms),
+          D_me_hs = sum(D_me_hs),
+          .by = iso3c) |> 
+  arrange(desc(D_he_ms))
+
+summarize(data_sample_iso,
+          D_he_ms = sum(D_he_ms),
+          D_me_hs = sum(D_me_hs),
+          .by = c(iso3c, year)) |> 
+  arrange(desc(D_he_ms))
+```
+
+```{r panel_view}
+
+# High exposure / Medium severity
+panelview(Y="Y", D="D_he_ms", index=c("iso3c", "year"), 
+          data = data_sample_iso, 
+          xlab = "Time Period", ylab = "Unit", 
+          by.timing = TRUE, 
+          collapse.history = TRUE,
+          cex.legend=5, cex.axis= 5, cex.main = 10, cex.lab = 5)
+
+# Medium exposure / High severity
+panelview(Y="Y", D="D_me_hs", index=c("iso3c", "year"), 
+          data = data_sample_iso, 
+          xlab = "Time Period", ylab = "Unit", 
+          by.timing = TRUE, 
+          collapse.history = TRUE,
+          cex.legend=5, cex.axis= 5, cex.main = 10, cex.lab = 5)
+
+```
+
+```{r functions}
+# ------------------------------------------------------------------------------
+# New functions
+# ------------------------------------------------------------------------------	
+
+# function for reverse cumulative sum of vector
+# summing up from end to start
+revcumsum <- function(x){
+  x <- rev(cumsum(rev(x)))
+}
+
+# function to calculate standard errors of cumulative sum
+# b: a coefficient vector
+# vcov: a variance covariance matrix
+secumsum <- function(vcov){
+  L <- dim(vcov)[1]
+  # result vector with standard errors
+  se <- c()
+  # loop over elements
+  for (i in c(1:L)){
+    # Variance of cumulative sum from 1 to i
+    # V[ax] = a*V[x]*a', a=[1, ..., 1]
+    # create vector for summation
+    a <- matrix(rep(1,i), nrow = 1)
+    V <- a %*% vcov[1:i,1:i] %*% t(a)
+    se[i] <- sqrt(V)
+  }
+  return(se)
+}
+
+# function to calculate standard errors of reverse cumulative sum
+# summing up from end to start
+# b: a coefficient vector
+# vcov: a variance covariance matrix
+serevcumsum <- function(vcov){
+  L <- dim(vcov)[1]
+  # result vector with standard errors
+  se <- c()
+  # loop over elements
+  for (i in c(L:1)){
+    # Variance of cumulative sum from i to L
+    # V[ax] = a*V[x]*a', a=[1, ..., 1]
+    a <- matrix(rep(1,L-i+1), nrow = 1)
+    V <- a %*% vcov[i:L,i:L] %*% t(a)
+    se[i] <- sqrt(V)
+  }
+  return(se)
+}
+```
+
+# Country-year
+
+## MDO
+
+Multiple treatments of identical intensities
+
+Estimation with distributed-lags in levels
+
+```{r}
+data <- data_sample_iso
+# Constructs a fixest panel data base
+data = panel(data, ~iso3c+year)
+```
+
+```{r treatment_adoption_indicator}
+# create (binary) treatment adoption indicator
+
+#data$treat <- data$D_prec_90
+#data$treat <- data$D_he_ms
+data$treat <- data$D_me_hs
+```
+
+```{r treatment_status}
+
+# set arbitrary starting value set to zero 
+data$treat[is.na(data$treat)] <- 0
+# cumulative sum
+data$D_event <- ave(data$treat, data$iso3c, FUN = cumsum)
+# generate treatment status from treatment adoption indicator
+summary(data$D_event)
+```
+
+```{r}
+# estimate distributed-lag model in levels with F leads and L lags
+res_ols <- feols(
+  log(Y + .001) ~ 
+#  f(D_event, k = 5)
+#  f(D_event, k = 4) 
+  f(D_event, k = 3) +
+  f(D_event, k = 2) +
+  f(D_event, k = 1) + 
+  D_he_ms + csw0(storm, drought) +
+  l(D_event, k = 1) +
+  l(D_event, k = 2)  +
+  l(D_event, k = 3) |
+#  l(D_event, k = 4)  
+#  l(D_event, k = 5)
+  iso3c + year + csw0(region_name^year, iso3c[[t]]),
+  cluster = ~iso3c,
+  data = data)
+summary(res_ols)
+```
+
+```{r}
+# choose specification
+gamma_D_event <- res_ols[[4]]$coefficients
+vcov_D_event <- vcov(res_ols[[4]])
+```
+
+```{r}
+# beta coefficients and standard errors
+# cumulative sum of gamma coefficients starting at zero in period -1
+beta_D_event <- data.table::data.table(
+  year_to_event = c(-3:3), 
+  coef = c(-revcumsum(gamma_D_event[1:3]),   # leads
+            0,                               # reference period
+            cumsum(gamma_D_event[5:7])),    # lags
+  se = c(-serevcumsum(vcov_D_event[1:3, 1:3]), # leads
+         0,                                    # reference period
+         secumsum(vcov_D_event[5:7, 5:7])))  # lags
+beta_D_event
+```
+
+```{r}
+# plot beta coefficients
+ggplot(beta_D_event, aes(x = year_to_event, y = coef)) +
+  geom_line(color = "darkblue") +
+  geom_point(color = "darkblue") +
+  geom_errorbar(aes(ymin = coef - 1.96*se, ymax = coef + 1.96*se), width=.1,
+                color = "darkblue") +
+  geom_hline(yintercept = 0) + 
+  geom_vline(xintercept = -0.5, linetype = "dashed") +
+  scale_x_continuous(breaks = c(-3:3)) +
+  theme_light()
+```
+
+## LP-DID
+
+```{r}
+
+# define sample
+data <- data_sample_iso
+
+# Constructs a fixest panel data base
+data = panel(data, ~iso3c+year)
+
+# log-transform outcome variable
+data$log_Y <- log(data$Y + .001)
+```
+
+### Treatment
+
+```{r}
+
+# Exposure
+D_exp <- list(
+  "D_prec_4060",
+  "D_prec_50",
+  "D_prec_90",
+  "D_prec_99"
+)
+
+# Exposure / Severity
+D_e_s <- list(
+  "D_he_ms",
+  "D_me_hs"
+)
+```
+
+```{r}
+
+# Exposure-only treatments
+map(D_exp, \(x) {
+  
+  res <- lpdid(df = data, window = c(-5, 5),
+    y = "log_Y",
+    treat_status = x,
+    unit_index = "iso3c", time_index = "year",
+    outcome_lags = 1,
+    nonabsorbing_lag = 3,
+    cluster	= "iso3c"
+    )
+
+  plot_lpdid(res, x.shift = -0.05, col = "dodgerblue", main = x)
+  
+})
+
+```
+
+```{r}
+
+# Exposure~Severity treatments
+map(D_e_s, \(x) {
+  
+  res <- lpdid(df = data, window = c(-5, 5),
+    y = "log_Y",
+    treat_status = x,
+    unit_index = "iso3c", time_index = "year",
+    outcome_lags = 1,
+    nonabsorbing_lag = 3,
+    cluster	= "iso3c"
+    )
+
+  plot_lpdid(res, x.shift = -0.05, col = "dodgerblue", main = x)
+  
+})
+```
+
+### Fixed effects
+
+```{r}
+
+FEs <- list(
+  ~ 1 | iso3c,
+  ~ 1 | iso3c + region_code^year,
+  ~ 1 | iso3c + region_code^year + iso3c[[t]]
+)
+```
+
+```{r}
+
+# High severity
+map(FEs, \(x) {
+
+    res_lpdid <- lpdid(df = data, window = c(-5, 5),
+    y = "log_Y",
+    treat_status = "D_prec_90",
+    unit_index = "iso3c", time_index = "year",
+    controls = x,
+    outcome_lags = 1,
+    nonabsorbing_lag = 3,
+    cluster	= "iso3c"
+    )
+    
+    titles <- str_extract(as.character(x), "iso.*")
+    
+    plot_lpdid(res_lpdid, x.shift = -0.05, col = "dodgerblue",
+                       main = titles)
+})
+```
+
+### Covariates
+
+```{r}
+
+covariates_t <- list(
+  ~ sto_dummy | iso3c + region_code^year,
+  ~ storm | iso3c + region_code^year
+)
+```
+
+```{r}
+
+# Medium exposure / High severity
+map(covariates_t, \(x) {
+
+    res_lpdid <- lpdid(df = data, window = c(-5, 5),
+    y = "log_Y",
+    treat_status = "D_me_hs",
+    unit_index = "iso3c", time_index = "year",
+    controls_t = x,
+    outcome_lags = 1,
+    nonabsorbing_lag = 3,
+    cluster	= "iso3c"
+    )
+    
+    titles <- sub("^~", "", as.character(x))
+    
+    plot_lpdid(res_lpdid, x.shift = -0.05, col = "dodgerblue",
+                       main = titles)
+})
+```
+
+# Category-country-year
+
+```{r}
+
+# sample
+data <- data_sample_iso_cat
+
+# outcome
+data$log_Y <- log(data$Y + .001)
+
+# list categories
+categories  <- list("Development", "Gov. & Peace", "Budgetary", "Humanitarian")
+```
+
+### Treatment
+
+```{r}
+
+## Exposure-only treatments
+
+# perc. 40-60
+map(categories, \(x) {
+  
+  res <- lpdid(df = data[data$category==x, ], window = c(-5, 5),
+    y = "log_Y",
+    treat_status = "D_prec_4060",
+    unit_index = "iso3c", time_index = "year",
+    controls = ~ 1 | iso3c + region_code^year,
+    outcome_lags = 1,
+    nonabsorbing_lag = 3,
+    cluster	= "iso3c"
+    )
+
+  plot_lpdid(res, x.shift = -0.05, col = "dodgerblue", main = x)
+})
+
+# perc. >= 50
+map(categories, \(x) {
+  
+  res <- lpdid(df = data[data$category==x, ], window = c(-5, 5),
+    y = "log_Y",
+    treat_status = "D_prec_50",
+    unit_index = "iso3c", time_index = "year",
+    controls = ~ 1 | iso3c + region_code^year,
+    outcome_lags = 1,
+    nonabsorbing_lag = 3,
+    cluster	= "iso3c"
+    )
+
+  plot_lpdid(res, x.shift = -0.05, col = "dodgerblue", main = x)
+})
+
+# perc. >= 90
+map(categories, \(x) {
+  
+  res <- lpdid(df = data[data$category==x, ], window = c(-5, 5),
+    y = "log_Y",
+    treat_status = "D_prec_90",
+    unit_index = "iso3c", time_index = "year",
+    controls = ~ 1 | iso3c + region_code^year,
+    outcome_lags = 1,
+    nonabsorbing_lag = 3,
+    cluster	= "iso3c"
+    )
+
+  plot_lpdid(res, x.shift = -0.05, col = "dodgerblue", main = x)
+})
+```
+
+```{r}
+
+# Medium exposure / High severity
+map(categories, \(x) {
+  
+  res <- lpdid(df = data[data$category==x, ], window = c(-5, 5),
+    y = "log_Y",
+    treat_status = "D_me_hs",
+    unit_index = "iso3c", time_index = "year",
+    controls = ~ 1 | iso3c + region_code^year,
+    outcome_lags = 1,
+    nonabsorbing_lag = 3,
+    cluster	= "iso3c"
+    )
+
+  plot_lpdid(res, x.shift = -0.05, col = "dodgerblue", main = x)
+})
+
+# Medium exposure / High severity
+map(categories, \(x) {
+  
+  res <- lpdid(df = data[data$category==x, ], window = c(-5, 5),
+    y = "log_Y",
+    treat_status = "D_he_ms",
+    unit_index = "iso3c", time_index = "year",
+    controls = ~ 1 | iso3c + region_code^year,
+    outcome_lags = 1,
+    nonabsorbing_lag = 3,
+    cluster	= "iso3c"
+    )
+
+  plot_lpdid(res, x.shift = -0.05, col = "dodgerblue", main = x)
+})
+```
+
+# Sector-country-year
+
+```{r}
+
+# sample
+data <- data_sample_sect
+
+# outcome
+data <- data_sample_sect
+data$log_Y <- log(data$commit + .001)
+```
+
+### Treatment
+
+```{r}
+
+## Exposure-only treatments
+
+# perc. 40-60
+map(categories, \(x) {
+  
+  res <- lpdid(df = data[data$category==x, ], window = c(-5, 5),
+    y = "log_Y",
+    treat_status = "D_prec_4060",
+    unit_index = "iso_sect_id", time_index = "year",
+    controls = ~ 1 | iso3c + region_code^year,
+    outcome_lags = 1,
+    nonabsorbing_lag = 3,
+    cluster	= "iso3c"
+    )
+
+  plot_lpdid(res, x.shift = -0.05, col = "dodgerblue", main = x)
+})
+
+# perc. >= 50
+map(categories, \(x) {
+  
+  res <- lpdid(df = data[data$category==x, ], window = c(-5, 5),
+    y = "log_Y",
+    treat_status = "D_prec_50",
+    unit_index = "iso_sect_id", time_index = "year",
+    controls = ~ 1 | iso3c + region_code^year,
+    outcome_lags = 1,
+    nonabsorbing_lag = 3,
+    cluster	= "iso3c"
+    )
+
+  plot_lpdid(res, x.shift = -0.05, col = "dodgerblue", main = x)
+})
+
+# perc. >= 90
+map(categories, \(x) {
+  
+  res <- lpdid(df = data[data$category==x, ], window = c(-5, 5),
+    y = "log_Y",
+    treat_status = "D_prec_90",
+    unit_index = "iso_sect_id", time_index = "year",
+    controls = ~ 1 | iso3c + region_code^year,
+    outcome_lags = 1,
+    nonabsorbing_lag = 3,
+    cluster	= "iso3c"
+    )
+
+  plot_lpdid(res, x.shift = -0.05, col = "dodgerblue", main = x)
+})
+```

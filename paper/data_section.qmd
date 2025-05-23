@@ -1,0 +1,354 @@
+---
+title: Beg or Bargain
+subtitle: 
+header: Draft version
+author:
+  - name: Paul Vernus
+    email: paul.vernus@doctorant.uca.fr
+    affiliations:
+      - name: CERDI - CNRS - UCA - IRD
+date: today
+date-format: full
+bibliography: references.bib
+format:
+  academic-typst:
+    section-numbering: "1.1.1"
+    font-paths: ["./static/fonts"]
+    mainfont: "Libertinus Serif"
+    sansfont: Jost
+    mathfont: "Libertinus Math"
+    bibliographystyle: "chicago-author-date"
+    include-in-header:
+      - text: '#import "@preview/mitex:0.2.4": *'
+execute: 
+  echo: false
+  warning: false
+editor: 
+  markdown: 
+    wrap: sentence
+---
+
+```{r load_pckg}
+library(dplyr)
+library(ggplot2)
+library(patchwork)
+library(tinytable)
+library(modelsummary)
+library(showtext)
+library(gt)
+```
+
+```{r theme_quarto}
+color_accent <- "#107895"
+color_accent2 <- "#9a2515"
+color_accent3 <- "#e64173"
+
+font_base_regular <- "Roboto Condensed"
+font_base_light <- "Roboto Condensed Light"
+
+# font_add_google(font_base_regular, font_base_light)
+showtext_auto()
+
+theme_quarto <- function(font_title = font_base_regular,
+                        font_text = font_base_light,
+                        size_base = 11) {
+                          
+    ggplot2::theme_minimal(base_family = font_text, base_size = size_base) +
+        ggplot2::theme(
+        plot.title = ggplot2::element_text(size = size_base * 1.2, face = "bold",
+                                            family = font_title),
+        plot.subtitle = ggplot2::element_text(size = size_base, face = "plain",
+                                                family = font_text),
+        plot.caption = ggplot2::element_text(size = size_base * 0.6,
+                                            color = "grey50",
+                                            face = "plain",
+                                            family = font_text,
+                                            margin = ggplot2::margin(t = 10)),
+        panel.grid.minor = ggplot2::element_blank(),
+        strip.text = ggplot2::element_text(size = size_base * 0.9, hjust = 0,
+                                            family = font_text, face = "bold"),
+        strip.background = ggplot2::element_rect(fill = "#ffffff", color = NA),
+        axis.ticks = ggplot2::element_blank(),
+        axis.title = ggplot2::element_text(family = font_text, face = "plain",
+                                            size = size_base * 0.8),
+        axis.title.x = ggplot2::element_text(margin = ggplot2::margin(t = 5)),
+        axis.text = ggplot2::element_text(family = font_text, face = "plain"),
+        legend.title = ggplot2::element_blank(),
+        legend.key = ggplot2::element_blank(),
+        legend.text = ggplot2::element_text(size = size_base * 0.75,
+                                            family = font_text, face = "plain"),
+        legend.spacing = ggplot2::unit(0.1, "lines"),
+        legend.box.margin = ggplot2::margin(t = -0.5, unit = "lines"),
+        legend.margin = ggplot2::margin(t = 0),
+        legend.position = "bottom",
+        plot.title.position = "plot"
+        )
+}
+```
+
+The @IPCC (Chapter 1, p.201) defines Climatic impact-drivers (CIDs) as "physical climate system conditions (e.g., means, events, extremes) that affect an element of society or ecosystems." Here, I focus on 'extremes' as a specific category of CID.
+Besides, the effects of changes caused by CIDs on natural and human systems can be detrimental, beneficial, neutral or a mixture of these.
+As I am interested in how the international architecture of development finance can play a role as a risk-coping, ex post smoothing, mechanism, I am only interested in weather and climate events with adverse consequence, often described as 'hazards'.
+Refered as disastrous weather and climate extreme events.
+
+# Data
+
+## Outcomes
+
+Goals of the bargaining compromise: (a) amount of aid, (b) technical control over implementation, (c) policy influence over design.
+
+The data on development financial flows comes from the Organisation for Economic Co-operation and Development (OECD) Creditor Reporting System (CRS).
+It includes detailed financial information on aid activities[^1].
+Donors report about their activities to the OECD Development Assistance Committee (DAC) through an annual questionnaire, following converged statistical reporting directives.
+The OECD releases the CRS dataset with a two-year lag, after the questionnaires have been reviewed by the DAC Working Party on Statistics.
+CRS data is available on commitments from 1995 and disbursements from 2002.
+
+[^1]: The OECD's Glossary of statistical terms and concepts of development finance defines aid activity as "*projects and programmes, cash transfers, deliveries of goods, training courses, research projects, debt relief operations and contributions to non-governmental organisations.*"
+
+Providers that report to the OECD includes both DAC and non-DAC country members, multilateral institutions, as well as private philanthropic foundations.
+As of April 2025, 188 providers had registered to the DAC.
+However, not all providers of development cooperation report their activities to the DAC.
+For instance, non-DAC "emerging donors" such as China and Brazil provide what they refer to as "South-South cooperation" but do not report it to the DAC.
+
+*(appendix: table with providers)*
+
+ODA recipients countries and territories include the Least Developed Countries (LDCs) as defined by the United Nations (UN) and low and middle income countries (LIMCs) based on gross national income per capita as published by the World Bank[^2].
+The list is revised every three year.
+As of april 2025, it included 141 recipient countries.
+
+[^2]: the DAC list of ODA Recipients excludes former G8 members, EU members, and countries with a firm date for entry into the EU.
+
+*(appendix: table with recipient countries)*
+
+I focus on Official Development Assistance (ODA).
+ODA can take the form of either grants or concessional loans.
+It excludes Other official flows (OOF), official export credits and private flows also collected by the DAC.
+ODA includes funds for both development and humanitarian aid activities from donors and to recipients within the OECD DAC. I exclude in-donor (e.g., refugees/asylum seekers, development awareness) expenditures and administrative (non-sector allocable) costs from the analysis to focus on cross-border flows.
+
+Three types of outcome variables are used in the analysis: (1) the volume of ODA commitments, (2) the share of ODA commitments for activities designed under a specific co-operation modality, and (3) the share of ODA commitments implemented through a specific channel of delivery.
+*(to be completed)*
+
+-   \(a\) Volume of aid: commitments are in 2022 constant US dollar.
+    Commitments represent aid planned or promised by donors.
+    They better capture the outcome of the policy bargaining process with recipient authorities than disbursements.
+
+-   \(b\) Policy influence: co-operation modalities proxy policy influence over the design of aid activities.
+    There are four main modalities: (a) budget support, (b) core contributions and pooled programmes and funds, (c) project-type interventions (incl. other technical assistance), and (d) debt relief.
+
+-   \(c\) Technical control: channels of delivery proxy technical control over the implementation of aid activities.
+
+    (a) State, (b) non-State channels. Within non-State channels: (b1) Multilateral, (b2) NGOs, (b3) Private sector. The channel of delivery is the first implementing partner. It is the entity that has implementing responsibility over the funds and is normally linked to the extending agency by a contract or other binding agreement, and is directly accountable to it. In the case of loans, the borrower is reported, i.e. the first entity outside the donor country that receives the funds.
+
+*(appendix: two tables with the share of ODA by (a) modality and (b) channel of delivery)*
+
+## Treatment
+
+We are interested in how a disastrous weather and climate extreme events impacts the outcome of aid negotiations between recipient leadership and official providers.
+Consequently, the treatment variable needs first to define at the country level a set of disastrous events and then to differentiate between them according to their severity.
+
+Two approaches to differentiate between disastrous events: (a) Outcome-based approach, uses economic or human damage, the right-hand side of the IPCC risk framework.
+However, strong bias in the estimation of damages highlighted in the literature.
+(b) Input-based approach, focuses on the exogenous component of the function of disaster impacts, i.e., the physical strength of hazard.
+Such approach reflects with previous work in the literature on the impact of disasters that argue for comprehensive physical disaster intensity measures in causal empirical analysis [@noy2009; @cavallo2013; @felbermayr2014a].
+I follow a input-based approach.
+
+To do so, I construct a global multi-hazard severity measure following the approach suggested by @dellmuth2021.
+As a first step, @dellmuth2021 conduct a validation exercise to show that disaster events reported worldwide on average capture a subset of more extreme meteorological events from the total distribution of events.
+Then, the authors link geocoded disasters with weather and climate extremes captured with gridded meteorological data to construct yearly measures of hazard severity at the event level.
+The measures has the advantage to take into account the specificity of each local climates but are at the same time comparable across geographies and event types.
+
+*Data sources*:
+
+I used two levels of information to build the global multi-hazard severity measure: (1) disaster-level data from the Emergency Events Database (EM-DAT) and the Geocoded Disasters (GDIS) dataset; (2) grid-level climate data from ERA5 atmospheric reanalysis and Multi-Source Weighted-Ensemble Precipitation (MSWEP) datasets.
+
+First, information on disasters comes from the EM-DAT while spatial information on disaster locations comes from the GDIS dataset.
+For each event listed in EM-DAT between 1960 and 2018, GDIS provides geocoded data as a spatial geometry at the administrative level 1 or lower.
+
+The EM-DAT systematically records global disaster data resulting from both technological and natural hazards since 1988.
+The database is compiled by the Centre for Research on the Epidemiology of Disasters (CRED) from various sources, including UN agencies, non-governmental organizations, reinsurance companies, research institutes, and press agencies.
+To be included in EM-DAT, an event must meet at least one of the following criteria: (1) 10 deaths or above; (2) 100 people affected or above; (3) A call for international assistance or a declaration of a state of emergency.
+
+Different typologies exist to define climate-related events.
+The IPCC defines a climatic impact-driver (CID) as "a physical climate condition that directly affects society or ecosystems." (p.1871).
+It may represent an average (e.g., the average winter temperatures), an event (e.g., a frost), or an extreme event (e.g., a flash flood).
+As a CID is "not universally hazardous or beneficial", but aid probably reacts most to the former, I only consider detrimental CIDs, also refereed as 'hazards'.
+
+The EM-DAT's classification tree doesn't follow the same typology as the IPCC, but both frameworks refer to similar event types (cf. Table).
+Here, I focus on only consider extreme temperatures/heat, storms/wind, floods/wet and droughts/dry events.
+
+```{r table_framework}
+# Create the data frame
+table_framework <- data.frame(
+  "emdat_group" = c("Meteorological", "Hydrological", "Hydrological", "Hydrological",
+                     "Climatological", "Climatological", "Climatological",
+                     "Meteorological", "Meteorological"),
+  "emdat_type" = c("Extreme temperature", "Flood", "Flood", "Flood",
+                    "Drought", "Drought", "Drought",
+                    "Storm", "Storm"),
+  "emdat_subtype" = c("Heat wave", "Flood (General)", "Flash flood", "Riverine flood",
+                       "Drought", "Drought", "Drought",
+                       "Storm (general), Derecho, Sand/Dust storm, Severe weather, Storm surge, Tornado",
+                       "Tropical cyclone, Extra-tropical storm"),
+  "cid_type" = c("Heat", "Wet", "Wet", "Wet",
+                 "Dry", "Dry", "Dry",
+                 "Wind", "Wind"),
+  "cid_category" = c("Extreme heat", "River flood, Heavy precipitation and pluvial flood", "Heavy precipitation and pluvial flood",
+                     "River flood",
+                     "Aridity", "Hydrological drought", "Agricultural and ecological drought",
+                     "Severe wind storm", "Tropical cyclone")
+)
+
+# Create the table with sub-headers
+table_framework |> 
+  gt() |> 
+  tab_header(
+    title = "Disastrous Weather and Climate Extreme Event Typology",
+    subtitle = "Framework comparison between EM-DAT's classification tree and IPCC's climatic impact-driver (CID)"
+  ) |> 
+  tab_spanner(
+    label = "EM-DAT",
+    columns = c("emdat_group", "emdat_type", "emdat_subtype")
+  ) |> 
+  tab_spanner(
+    label = "IPCC",
+    columns = c("cid_type", "cid_category")
+  ) |> 
+  cols_label(
+    emdat_group = "Group",
+    emdat_type = "Type",
+    emdat_subtype = "Subtype",
+    cid_type = "CID Type",
+    cid_category = "CID Category"  
+  ) |> 
+  tab_footnote(
+    footnote = "(1) Source: EM-DAT, CRED / UCLouvain, Brussels, Belgium – www.emdat.be; (2) Ranasinghe et al. (2021), Table 12.1, p.1776, doi:10.1017/9781009157896.014",
+    locations = cells_title(groups = "title")
+  )
+```
+
+*(To do: Sankey diagram with EM-DAT, GDIS observations group by disaster type)*
+
+Second, grid-level climate data come from ERA5 atmospheric reanalysis and Multi-Source Weighted-Ensemble Precipitation (MSWEP) datasets.
+
+(a) ERA5 atmospheric reanalysis provides hourly data on surface and upper-air parameters with global coverage at 0.25° (31x31 km at the equator) that covers the period drom 1940 to the present.
+    It is produced by the European Centre for Medium-Range Weather Forecasts (ECMWF) on behalf of the European Union’s Copernicus Climate Change Service (C3S).
+    I consider three parameters: temperature, wind, and precipitation.
+
+(b) Multi-Source Weighted-Ensemble Precipitation (MSWEP) is a gridded precipitation dataset produced by GloH2O that covers the period from 1979 to the present.
+    It is the only sub-daily precipitation dataset with fully global coverage at 0.1° resolution (11x11 km at the equator).
+    MSWEP combines gauge, satellite, and reanalysis precipitation estimates.
+    However, similarly to other precipitation datasets, performance relies on the number of available gauge observations and might be lower in regions with less rain gauges such as in Africa.
+
+*Variable construction*:
+
+First step, I match geocoded EM-DAT data to ERA5 reanalysis data.
+For each ODA recipient country, I filter the geocoded administrative regions reported in GDIS over the treatment window (2005-2018).
+Then, I extract all grid-cells whose centroids are within the boundaries of the filtered administrative regions.
+
+Second step, I use the meteorological data to calculate yearly measures of hazard severity.
+For each grid-cell I compute the daily value of the meteorological indicators over the baseline period (1979-2005).
+The distribution of daily values over the baseline period are defined as the climatological distributions.
+Daily events are defined as extremes is their value is above a pre-defined (relative) threshold, defined as a percentile in the climatological distribution.
+The percentile (e.g., p90) is common to all grid-level distributions, but the value it represents is specific to each grid point.
+This method allows for a standardized and comparable hazard intensity measure that accounts for local climate heterogeneity.
+
+Then, for each grid-year, compute the frequency of daily hazard intensity measures between the start and end dates of the disaster as reported in the EM-DAT.
+
+Then, to aggregate at the disaster local, administrative level, I average yearly values.
+I obtain disaster-level severity measures, standardized and comparable across hazards.
+These are the hazard severity measures, similar to @dellmuth2021.
+
+To aggregate at the country level, (a) take the max, (b) average or (c) sum across disasters.
+A country-year observation is considered as treated if at leat one disastrous weather and climate extreme event occured in the year, over the period 2003-2018.
+
+```{r table_weather_functional_form}
+# Create the data frame
+table_weather_functional_form <- data.frame(
+  "emdat" = c("Extreme temperature", 
+              "Flood",
+              "Drought",
+               "Storm"),
+  "cid" = c("Heat",
+            "Wet",
+            "Dry",
+            "Wind"),
+  "weather_var" = c("Temperature", 
+                    "Precipitation",
+                    "Precipitation",
+                    "Wind"),
+  "daily_extreme_index" = c("Maximum temperature (C°)", 
+                            "One-day accumulated precipitation (mm)",
+                            "180-day accumulated precipitation (mm)",
+                            "Maximum wind speed (m/s)"),
+  "shock_type" = c("Positive", 
+                   "Positive", 
+                   "Negative",
+                   "Positive"),
+  "threshold" = c("p90", 
+                  "p90",
+                  "p10",
+                  "p90"),
+  "baseline_period" = c("1979-2000, 20-year",
+                        "1979-2000, 20-year",
+                        "1979-2000, 20-year",
+                        "1979-2000, 20-year")
+)
+
+# Create the table with sub-headers
+weather_functional_form_table |> 
+  gt() |> 
+  tab_header(
+    title = "Weather Functional Form",
+    subtitle = ""
+  ) |> 
+  tab_spanner(
+    label = "Hazard Type",
+    columns = c("emdat", "cid")
+  ) |> 
+  tab_spanner(
+    label = "Assumptions",
+    columns = c("weather_var", "daily_extreme_index", "shock_type", "threshold", "baseline_period")
+  ) |> 
+  cols_label(
+  emdat = "EM-DAT",
+  cid = "CID",
+  weather_var = "Weather variable",
+  daily_extreme_index = "Daily extreme indice (unit)",
+  shock_type = "Shock type",
+  threshold = "Threshold",
+  baseline_period = "Baseline period",
+    )
+```
+
+*Limitations*:
+
+Using a time-invariant baseline assumes stationary of the weather distribution.
+It also makes assumption regarding on the belief formation process of the agents and the speed of adjustment to the climate distribution.
+Multiple baseline periods are used in robustness checks to define the climatological distribution.
+
+Importantly, the objective is *not* to detect the occurrence of an extreme event and estimate its direct impact on some physical stock or flow.
+
+First, I assume that local authorities and donors only react to publicly acknowledged events, i.e., events that have been reported by traditional sources, such as UN agencies, NGOs, reinsurence companies, research institutes, and press agencies.
+
+Second, I assume that the potential effect of a disaster on the aid policy outcome increases with its severity.
+
+Reported disaster event at the administrative levels are related to cumulative daily extreme events at a more granular levels.
+E.g., heavy precipitation on a limited spatial area.
+
+N.B. Quid other disasters, e.g., wet mass movements (heavy precipitation), wildfire (drought, hot waves), epidemic (floods).
+
+## Controls
+
+Final dataset,
+
+Panel data Unit of observation: country-year Total number of observations
+
+Features of the data Data limitations
+
+## Descriptive statistics
+
+# Identification strategy
+
+{{< appendix >}}
+
+{{< pagebreak >}}

@@ -1,0 +1,593 @@
+---
+title: "Analysis: TWFE"
+format: docx
+editor: visual
+bibliography: references.bib
+---
+
+```{r, load_pckg}
+
+source(here::here('scripts', 'library.R'))
+```
+
+```{r load_data}
+
+load(here("data", "data_sample.RData"))
+```
+
+```{r panel_view}
+
+panelview(Y="Y", D="D_prec_90", index=c("iso3c", "year"), 
+          data = data_sample_iso, 
+          xlab = "Time Period", ylab = "Unit", 
+          gridOff = TRUE, by.timing = TRUE, 
+          cex.legend=5, cex.axis= 5, cex.main = 10, cex.lab = 5)
+
+```
+
+-   **Estimators**
+
+| Estimator              | Outcome        | Reference     |
+|------------------------|----------------|---------------|
+| OLS                    | Log (Y + .001) | Arezki et al. |
+| OLS                    | Log (Y \> 0)   | Chen and Roth |
+| GLM (family = "logit") | \[0;1\]        |               |
+| Poisson                | Y              | Chen and Roth |
+
+-   **Specifications**
+
+|                 | Flood (dummy) | Storm (dummy) | Drought (dummy) |
+|-----------------|---------------|---------------|-----------------|
+| Specification 1 | x             |               |                 |
+| Specification 2 | x             | x             |                 |
+| Specification 3 | x             | x             | x               |
+
+-   **Fixed Effects**
+
+| Model     | Country | Sector | Year | Region-Year | Country-specific linear trends |
+|-----------|---------|--------|------|-------------|--------------------------------|
+| Model 1.1 | x       |        | x    |             |                                |
+| Model 1.2 | x       |        | x    | x           |                                |
+| Model 1.3 | x       |        | x    | x           | x                              |
+| Model 2.1 | x       | x      | x    |             |                                |
+| Model 2.2 | x       | x      | x    | x           |                                |
+| Model 2.3 | x       | x      | x    | x           | x                              |
+
+# Point estimates
+
+## Country-year
+
+```{r static_country_year}
+
+## standard log-transformation OLS
+# log(Y + .001)
+res.ols <- feols(log(Y + .001) ~ D_prec_90 + csw0(sto_dummy, dro_dummy) | 
+            iso3c + year + csw0(region_name^year, iso3c[[t]]),
+    data = data_sample_iso,
+    cluster = ~iso3c)
+summary(res.ols)
+
+## Chen and Roth (extensive and intensive margins)
+# Y binary
+# res.glm.ext <- feglm(Y_d ~ D_prec_90 + csw0(sto_dummy, dro_dummy) | 
+#              iso3c + year + csw0(region_name^year, iso3c[[t]]),
+#    data = data_sample_iso,
+#    family = "logit",
+#    cluster = ~iso3c)
+# NOTE: collinearity (few variation at the extensive margin)
+
+# log(Y > 0)
+res.glm.int <- feols(log(Y) ~ D_prec_90 + csw0(sto_dummy, dro_dummy) | 
+              iso3c + year + csw0(region_name^year, iso3c[[t]]),
+    data = data_sample_iso,
+    subset = ~ Y_d == 1,
+    cluster = ~iso3c)
+summary(res.glm.int)
+
+## Poisson regression
+res.pois <- fepois(Y ~ D_prec_90 + csw0(sto_dummy, dro_dummy) |
+             iso3c + year + csw0(region_name^year, iso3c[[t]]),
+    data = data_sample_iso,
+    cluster = ~iso3c)
+summary(res.pois)
+
+coefplot(list(res.ols[[9]], res.glm.int[[9]], res.pois[[9]]))
+```
+
+```{r}
+
+## Poisson regression
+res.pois.y <- fepois(Y ~ sw(D_prec_4060,D_prec_90, D_prec_99) + 
+                         sto_dummy + dro_dummy |
+                   iso3c + year + region_name^year + iso3c[[t]],
+    data = data_sample_iso,
+    cluster = ~iso3c) |> 
+  summary()
+
+coefplot(res.pois.y)
+```
+
+## Sector-country-year
+
+```{r static_sector_country_year}
+
+# Define outcome vars
+data_sample_sect$Y <- ifelse(data_sample_sect$commit < 0, 0, data_sample_sect$commit)
+data_sample_sect$Y_d <- data_sample_sect$commit_dummy
+
+## standard log-transformation OLS
+# log(Y + .001)
+res.ols <- feols(log(Y + .001) ~ D_prec_90 + csw0(sto_dummy, dro_dummy) | 
+            iso3c + year + csw0(region_name^year, iso3c[[t]]),
+    data = data_sample_sect,
+    cluster = ~iso3c)
+
+summary(res.ols)
+coefplot(res.ols)
+
+## Chen and Roth (extensive and intensive margins)
+# Y binary
+res.glm.ext <- feglm(Y_d ~ D_prec_90 + csw0(sto_dummy, dro_dummy) | 
+              iso3c + year + csw0(region_name^year, iso3c[[t]]),
+    data = data_sample_sect,
+    family = "logit",
+    cluster = ~iso3c)
+
+# log(Y > 0)
+res.glm.int <- feols(log(Y) ~ D_prec_90 + csw0(sto_dummy, dro_dummy) | 
+              iso3c + year + csw0(region_name^year, iso3c[[t]]),
+    data = data_sample_sect,
+    subset = ~ Y_d == 1,
+    cluster = ~iso3c)
+summary(res.glm.int)
+
+coefplot(list(res.glm.ext[[9]], res.glm.int[[9]]))
+
+## Poisson regression
+res.pois <- fepois(Y ~ D_prec_90 + csw0(sto_dummy, dro_dummy) |
+             iso3c + year + csw0(region_name^year, iso3c[[t]]),
+    data = data_sample_sect,
+    cluster = ~iso3c)
+summary(res.pois)
+
+coefplot(list(res.ols[[9]], res.glm.ext[[9]], res.glm.int[[9]], res.pois[[9]]))
+```
+
+# Event-Study
+
+## Country-year
+
+```{r}
+
+data_iso_cohort <- paneltools::get.cohort(data_sample_iso, 
+                                          index = c("iso3c", "year"), D = "D_prec_90", 
+                                          start0 = TRUE)
+
+```
+
+```{r}
+
+# Generate a dummy variable treat
+data_iso_cohort$treat <- 0
+data_iso_cohort[which(data_iso_cohort$Cohort!='Control'),'treat'] <- 1
+data_iso_cohort[which(is.na(data_iso_cohort$Time_to_Treatment)), "treat"] <- 0
+
+# remove observations that starts with treated status
+remove <- intersect(which(is.na(data_iso_cohort$Time_to_Treatment)), 
+                    which(data_iso_cohort[, "D_prec_90"]==1)) 
+if(length(remove)>0){data_iso_cohort <- data_iso_cohort[-remove,]}
+
+# replace missingness in Time_to_Treatment with an arbitrary number
+data_iso_cohort[which(is.na(data_iso_cohort$Time_to_Treatment)), "Time_to_Treatment"] <- 999 
+
+```
+
+```{r dynamic_country_year}
+
+## standard log-transformation OLS
+# log(Y + .001)
+ols.es <- feols(log(Y + .001) ~ i(Time_to_Treatment, D_prec_90, ref = -1) +
+                 sto_dummy + dro_dummy | 
+                 iso3c + year + region_name^year + iso3c[[t]],
+                data = data_iso_cohort,
+                subset = ~Time_to_Treatment %in% c(-1:5),
+                cluster = ~iso3c)
+
+iplot(ols.es, main = "log-OLS (full model)")
+
+# NOTE: also tried the following specification w/ the ULTs as regular variables
+# However, collinearity issues
+
+
+## Chen and Roth (extensive and intensive margins)
+# Y binary
+# res.glm.ext <- feglm(Y_d ~ i(Time_to_Treatment, D_prec_90, ref = -1) +
+#                 sto_dummy + dro_dummy |
+#              iso3c + year + region_name^year + iso3c[[t]],
+#    data = data_iso_cohort,
+#    subset = ~Time_to_Treatment %in% c(-1:5),
+#    family = "logit",
+#    cluster = ~iso3c)
+# NOTE: collinearity (few variation at the extensive margin)
+
+# log(Y > 0)
+res.glm.int <- feols(log(Y) ~ i(Time_to_Treatment, D_prec_90, ref = -1) +
+                     sto_dummy + dro_dummy |
+                     iso3c + year + region_name^year + iso3c[[t]],
+    data = data_iso_cohort,
+    subset = ~ (Time_to_Treatment %in% c(-1:5) & Y_d == 1),
+    cluster = ~iso3c)
+  
+iplot(res.glm.int, main = "Intensive margin (full model)")  
+  
+
+## Poisson regression
+res.pois <- fepois(Y ~ i(Time_to_Treatment, D_prec_90, ref = -1) +
+                   sto_dummy + dro_dummy |
+                   iso3c + year + region_name^year + iso3c[[t]],
+    data = data_iso_cohort,
+    subset = ~Time_to_Treatment %in% c(-1:5),
+    cluster = ~iso3c)
+
+iplot(res.pois, main = "Poisson (full model)")
+
+```
+
+## Sector-country-year
+
+```{r data_sect_cohort}
+
+data_sect_cohort <- paneltools::get.cohort(data_sample_sect, 
+                                          index = c("iso_sect_id", "year"), 
+                                          D = "D_prec_90", start0 = TRUE)
+
+```
+
+```{r data_sect_cohort_treat}
+
+# Generate a dummy variable treat
+data_sect_cohort$treat <- 0
+data_sect_cohort[which(data_sect_cohort$Cohort!='Control'),'treat'] <- 1
+data_sect_cohort[which(is.na(data_sect_cohort$Time_to_Treatment)), "treat"] <- 0
+
+# remove observations that starts with treated status
+remove <- intersect(which(is.na(data_sect_cohort$Time_to_Treatment)), 
+                    which(data_sect_cohort[, "D_prec_90"]==1)) 
+if(length(remove)>0){data_sect_cohort <- data_sect_cohort[-remove,]}
+
+# replace missingness in Time_to_Treatment with an arbitrary number
+data_sect_cohort[which(is.na(data_sect_cohort$Time_to_Treatment)), "Time_to_Treatment"] <- 999 
+```
+
+```{r dynamic_sector_country_year}
+
+## standard log-transformation OLS
+# log(Y + .001)
+ols.es <- feols(log(Y + .001) ~ i(Time_to_Treatment, D_prec_90, ref = -1) +
+                 sto_dummy + dro_dummy | 
+                 iso3c^purpose_code + year + region_name^year + iso3c[[t]],
+                data = data_sect_cohort,
+                subset = ~Time_to_Treatment %in% c(-1:5),
+                cluster = ~iso3c)
+
+iplot(ols.es, main = "log-OLS (full model)")
+
+# NOTE: also tried the following specification w/ the ULTs as regular variables
+# However, collinearity issues
+
+## Chen and Roth (extensive and intensive margins)
+# Y binary
+res.glm.ext <- feglm(Y_d ~ i(Time_to_Treatment, D_prec_90, ref = -1) +
+                 sto_dummy + dro_dummy |
+              iso3c^purpose_code + year + region_name^year + iso3c[[t]],
+    data = data_sect_cohort,
+    subset = ~Time_to_Treatment %in% c(-1:5),
+    family = "logit",
+    cluster = ~iso3c)
+
+iplot(res.glm.ext, main = "Extensive margin (full model)")
+
+# log(Y > 0)
+res.glm.int <- feols(log(Y) ~ i(Time_to_Treatment, D_prec_90, ref = -1) +
+                     sto_dummy + dro_dummy |
+                     iso3c^purpose_code + year + region_name^year + iso3c[[t]],
+    data = data_sect_cohort,
+    subset = ~ (Time_to_Treatment %in% c(-1:5) & Y_d == 1),
+    cluster = ~iso3c)
+  
+iplot(res.glm.int, main = "Intensive margin (full model)")
+
+iplot(list(res.glm.ext, res.glm.int), main = "Extensive/Intensive margins")
+  
+## Poisson regression
+res.pois <- fepois(Y ~ i(Time_to_Treatment, D_prec_90, ref = -1) +
+                   sto_dummy + dro_dummy |
+                   iso3c^purpose_code + year + region_name^year + iso3c[[t]],
+    data = data_sect_cohort,
+    subset = ~Time_to_Treatment %in% c(-1:5),
+    cluster = ~iso3c)
+
+iplot(res.pois, main = "Poisson (full model)")
+
+```
+
+# Category
+
+```{r dynamic_sector_humanitarian}
+
+## standard log-transformation OLS
+# log(Y + .001)
+ols.es <- feols(log(Y + .001) ~ i(Time_to_Treatment, D_prec_90, ref = -1) +
+                 sto_dummy + dro_dummy | 
+                 iso3c^purpose_code + year + region_name^year + iso3c[[t]],
+                data = data_sect_cohort,
+                subset = ~Time_to_Treatment %in% c(-1:5),
+                split = ~humanitarian,
+                cluster = ~iso3c)
+
+iplot(ols.es, main = "Humanitarian (log-OLS, full model)")
+
+## Chen and Roth (extensive and intensive margins)
+# Y binary
+res.glm.ext <- feglm(Y_d ~ i(Time_to_Treatment, D_prec_90, ref = -1) +
+                 sto_dummy + dro_dummy |
+              iso3c^purpose_code + year + region_name^year + iso3c[[t]],
+    data = data_sect_cohort,
+    subset = ~Time_to_Treatment %in% c(-1:5),
+    split = ~humanitarian,
+    family = "logit",
+    cluster = ~iso3c)
+
+iplot(res.glm.ext, main = "Humanitarian (extensive margin, full model)")
+
+# log(Y > 0)
+res.glm.int <- feols(log(Y) ~ i(Time_to_Treatment, D_prec_90, ref = -1) +
+                     sto_dummy + dro_dummy |
+                     iso3c^purpose_code + year + region_name^year + iso3c[[t]],
+    data = data_sect_cohort,
+    subset = ~ (Time_to_Treatment %in% c(-1:5) & Y_d == 1),
+    split = ~humanitarian,
+    cluster = ~iso3c)
+
+iplot(res.glm.int, main = "Humanitarian (intensive margin, full model)")
+
+## Poisson regression
+res.pois <- fepois(Y ~ i(Time_to_Treatment, D_prec_90, ref = -1) +
+             sto_dummy + dro_dummy |
+             iso3c^purpose_code + year + region_name^year + iso3c[[t]],
+    data = data_sect_cohort,
+    subset = ~Time_to_Treatment %in% c(-1:5),
+    split = ~ humanitarian,
+    cluster = ~iso3c)
+
+iplot(res.pois, main = " Humanitarian vs. Other (poisson, full model)")
+```
+
+```{r dynamic_sector_category}
+
+category <- list("Humanitarian", "Gov. & Peace", "Development", "Budgetary")
+
+category |> 
+  map(\(x) {
+    
+    # Filter the data for the current category
+    filtered_data <- data_sect_cohort[data_sect_cohort$category == x, ]
+    # Plot the results
+    iplot(
+      feols(log(Y + .001) ~ i(Time_to_Treatment, D_prec_90, ref = -1) | 
+            iso3c^purpose_code + year + region_name^year + iso3c[[t]],
+    data = filtered_data,
+    subset = ~Time_to_Treatment %in% c(-1:5),
+    cluster = ~iso3c),
+    main = x) 
+    }    
+  )
+
+## Poisson regression
+category |> 
+  map(\(x) {
+    
+    # Filter the data for the current category
+    filtered_data <- data_sect_cohort[data_sect_cohort$category == x, ]
+    # Plot the results
+    iplot(
+    fepois(Y ~ i(Time_to_Treatment, D_prec_90, ref = -1) +
+               sto_dummy + dro_dummy |
+               iso3c^purpose_code + year + region_name^year + iso3c[[t]],
+    data = filtered_data,
+    subset = ~Time_to_Treatment %in% c(-1:5),
+    cluster = ~iso3c),
+    main = paste(x, "(full model)")) 
+    }    
+  )
+
+```
+
+# Local Projections
+
+# MDO
+
+## Distributed-lag model in levels
+
+```{r}
+
+# define data as panel data (fixest package)
+panel <- panel(data_sample_iso, ~iso3c+year)
+```
+
+### Treatment adoption indicator
+
+```{r}
+
+# create (dummy) treatment adoption indicator  
+panel$D_event <- panel$D_prec_90
+
+# replace missing first treatment with zero (TBC) 
+#panel$D_event[is.na(panel$D_event)] <- 0
+```
+
+### Treatment status
+
+```{r case2_treat}
+
+# generate treatment status from treatment adoption indicator  
+# cumulative sum, arbitrary starting value set to zero as missing values are set to zero above  
+panel$treat <- ave(panel$D_event, panel$iso3c, FUN = cumsum) 
+summary(panel$treat)
+```
+
+### Estimation
+
+```{r}
+
+# balanced panel
+filtered_data <- subset(pdat, !(iso3c %in% c("BLR", "LBY", "UKR", "SSD")))
+```
+
+```{r feols}
+
+# run poisson regression
+# estimate distributed-lag model in levels with 2 leads and 4 lags
+mdo.es <- fepois(commit_all ~ 
+           f(treat, k=2) + f(treat, k=1) + 
+           treat + 
+           l(treat, k=1) + l(treat, k=2) + l(treat, k=3) + l(treat, k=4) |
+           iso3c + year + region_name^year,
+         data = panel,
+         cluster = ~iso3c
+                )
+
+summary(mdo.es)
+```
+
+```{r cumsum}
+
+# function for reverse cumulative sum of vector
+# summing up from end to start
+revcumsum <- function(x){
+  x <- rev(cumsum(rev(x)))
+}
+
+# function to calculate standard errors of cumulative sum
+# b: a coefficient vector
+# vcov: a variance covariance matrix
+secumsum <- function(vcov){
+  L <- dim(vcov)[1]
+  # result vector with standard errors
+  se <- c()
+  # loop over elements
+  for (i in c(1:L)){
+    # Variance of cumulative sum from 1 to i
+    # V[ax] = a*V[x]*a', a=[1, ..., 1]
+    # create vector for summation
+    a <- matrix(rep(1,i), nrow = 1)
+    V <- a %*% vcov[1:i,1:i] %*% t(a)
+    se[i] <- sqrt(V)
+  }
+  return(se)
+}
+
+# function to calculate standard errors of reverse cumulative sum
+# summing up from end to start
+# b: a coefficient vector
+# vcov: a variance covariance matrix
+serevcumsum <- function(vcov){
+  L <- dim(vcov)[1]
+  # result vector with standard errors
+  se <- c()
+  # loop over elements
+  for (i in c(L:1)){
+    # Variance of cumulative sum from i to L
+    # V[ax] = a*V[x]*a', a=[1, ..., 1]
+    a <- matrix(rep(1,L-i+1), nrow = 1)
+    V <- a %*% vcov[i:L,i:L] %*% t(a)
+    se[i] <- sqrt(V)
+  }
+  return(se)
+}
+```
+
+```{r}
+
+# gamma coefficients
+gamma_feols <- mdo.es$coefficients
+
+# variance-covariance matrix
+vcov_feols <- vcov_cluster(mdo.es, cluster = "iso3c", ssc = ssc(cluster.adj = TRUE))
+
+# beta coefficients and standard errors
+# cumulative sum of gamma coefficients starting at zero in period -1
+beta_feols <- data.table(
+  # effect window
+  event_time = c(-3:4), 
+  # point estimates
+  coef = c(-revcumsum(gamma_feols[1:2]),  # leads
+            0,                            # reference period
+            cumsum(gamma_feols[3:7])),    # lags
+  # standard errors using the formula of linear combinations
+  se = c(-serevcumsum(vcov_feols[1:2, 1:2]), # leads
+         0,                                  # reference period
+         secumsum(vcov_feols[3:7, 3:7])))    # lags
+
+beta_feols
+```
+
+```{r plot_feols}
+
+ggplot(beta_feols, aes(x = event_time, y = coef)) +
+  geom_line(color = "darkblue") +
+  geom_point(color = "darkblue") +
+  geom_errorbar(aes(ymin = coef - 1.96*se, ymax = coef + 1.96*se), width=.1,
+                color = "darkblue") +
+  geom_hline(yintercept = 0) + 
+  geom_vline(xintercept = -0.5, linetype = "dashed") +
+  scale_x_continuous(breaks = c(-3:4)) + 
+  xlab("Period relative to event") +
+  ylab("Effect on (log) outcome") +     
+  theme_bw()
+
+```
+
+# Annex
+
+We start with the ***Baseline randomization*** assumption:
+
+-   DGP: Two-Way Fixed Effects
+
+$$ y_{j,s,t} = α(Treatment)_{j,t} + δ_{j,s} + δ_{t} + ε_{j,s,t} $$
+
+-   Model specification options:
+
+    -   Region-specific year effects (cf. [@yang2008])
+
+    $$ y_{j,s,t} = α(Treatment)_{j,t} + \sumδ_{t}REG_j + δ_{j,s} + δ_{t} + ε_{j,s,t} $$
+
+    -   Country-specific linear time trend (cf. [@yang2008])
+
+        $$ y_{j,s,t} = α(Treatment)_{j,t} + δ_{t}TREND + δ_{j,s} + δ_{t} + ε_{j,s,t}$$
+
+    -   Lagged confounding shock
+
+        $$ y_{j,s,t} = α(Treatment)_{j,t} + α(Shock)_{j,t-1} + δ_{j,s} + δ_{t} + ε_{j,s,t}$$
+
+    *N.B.(1) when* $Treatment = Flood$*,* $Shock_{j,t-1}=Flood_{j,t-1}$ \| $Shock_{j,t-1}=Drought_{j,t-1}$ *(tbc).*
+
+    *N.B.(2) when* $Treatment = Drought$*,* $Shock_{j,t-1}=Drought_{j,t-1}$ \| $Shock_{t-1}=HotTemp_{j,t-1}$ *(tbc).*
+
+    -   Contemporaneous confounding shock
+
+        $$ y_{j,s,t} = α(Treatment)_{j,t} + δ(Shock)_{j,t} + δ_{j,s} + δ_{t} + ε_{j,s,t} $$
+
+    *N.B.(1) when* $Treatment = Flood$*,* $Shock_{j,t}=Storm$ *(tbc).*
+
+    *N.B.(2) when* $Treatment = Drought$*,* $Shock_{j,t}=HotTemp.$ *(tbc).*
+
+OTHER: between-country and within-country sector spillovers.
+
+-   Link functions:
+
+    -   Linear Probability Model (LPM)
+
+    -   Binomial (Logit)
+
+## 

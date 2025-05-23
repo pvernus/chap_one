@@ -1,0 +1,210 @@
+---
+title: "EM-DAT"
+format: docx
+editor: visual
+---
+
+```{r load_pckgs}
+
+source(here::here('scripts', 'library.R'))
+```
+
+#### EM-DAT Inclusion Criteria **(at least one)**
+
+-   At least ten deaths (including dead and missing).
+
+-   At least 100 affected (people affected, injured, or homeless).
+
+-   A call for international assistance or an emergency declaration.
+
+```{r import_raw_data_em_dat}
+
+em_dat <- read_xlsx( # import raw data
+  path = here('source', 'treatment', 'emdat', 'public_emdat_custom_request_2024-04-09_b44a5e9a-5bfb-450b-8e72-ab4a9c42fc72.xlsx'),
+  sheet = 1,
+  trim_ws = T
+  ) |> 
+  janitor::clean_names() |> 
+  dplyr::select(dis_no, classification_key:disaster_subtype, iso, country, region, associated_types, appeal, declaration, starts_with('magnitude'), ends_with('year'), ends_with('month')) |> 
+  mutate( 
+    appeal = as_factor(appeal),
+    declaration = as_factor(declaration),
+    call = fct(if_else(appeal == 'Yes' | declaration == 'Yes', 'Yes', 'No')),
+    call_type = case_when(
+      appeal == 'Yes' & declaration == 'Yes' ~ 'Both',
+      appeal == 'Yes' & declaration == 'No' ~ 'Appeal',
+      appeal == 'No' & declaration == 'Yes' ~ 'Declaration',
+      appeal == 'No' & declaration == 'No' ~ 'No'
+    ),
+# year: attribute disasters happening during Q4 to the next year (ex: a flood in December 2010 will be assigned to year=2011)
+    year = if_else(start_month %in% c(10:12) & end_month %in% c(10:12),
+                            end_year+1, 
+                            end_year)) |> 
+  filter(year < 2023)
+
+# call: new agg var for state of emergency and/or request for int.assistance
+```
+
+```{r year}
+
+em_dat |> 
+  count(year, disaster_subgroup) |> 
+  ggplot(aes(x=year, y=n, fill=disaster_subgroup)) +
+    geom_bar(position="stack", stat="identity") +
+    geom_text(aes(label=n), 
+              position = position_stack(vjust = 0.5),
+              size = 5, color = "white") +
+  theme(axis.text.y = element_blank()) +
+  theme_minimal() +
+  labs(x='Year', y='# Natural disasters', fill="Type")
+
+em_dat |> 
+  count(year, disaster_subgroup) |> 
+  mutate(pct = round(n / sum(n), 2), .by = year) |>
+  ggplot(aes(x=year, y=n, fill=disaster_subgroup)) +
+    geom_bar(position="fill", stat="identity") +
+    geom_text(aes(label = scales::percent(pct, accuracy = 1)),
+            position = position_fill(vjust = 0.5),
+            size = 3, color = "white") +
+  theme_minimal() +
+  theme(axis.text.y = element_blank()) +
+  labs(x='Year', y='', fill="Type")
+```
+
+Note: stable(?) number of events per year.
+
+```{r}
+
+summarize(em_dat,
+          n_country = n_distinct(iso),
+          .by = c(year, region)) |> 
+  ggplot(aes(x=year, y=n_country, fill=region)) +
+  geom_col() +
+  geom_text(aes(label = n_country),
+            position = position_stack(vjust = 0.5),
+            size = 3, color = "white") +
+  theme_minimal() +
+  theme(axis.text.y = element_blank()) +
+  labs(x='Year', y='# of countries',
+       title='Number of countries affected by a natural disaster')
+```
+
+Note: stable(?) number of affected countries per year.
+
+-   slighty decreasing mean yearly number of natural disasters per country.
+
+-   constant median yearly number of natural disasters per country.
+
+```{r}
+
+em_dat |> 
+  count(year, country) |> 
+  summarize(mean = mean(n, na.rm = T),
+            median = median(n, na.rm = T),
+            .by = year
+            ) |> 
+  pivot_longer(c(mean, median), names_to = 'stat', values_to = 'value') |> 
+  ggplot(aes(x=year, y=value, color=stat)) +
+  geom_line() +
+  geom_point() +
+  expand_limits(y = 0) +
+  theme_minimal() +
+  theme(legend.position = 'bottom') +
+  labs(x='Year', y='# Natural disasters',
+       title='Annual number of natural disasters per country')
+```
+
+-   Stable share of 'reported/large' extreme events.
+
+```{r}
+
+em_dat |> 
+  count(year, call) |> 
+  ggplot(aes(x=year, y=n, fill=call)) +
+    geom_bar(position="stack", stat="identity") +
+    geom_text(aes(label=n), 
+              position = position_stack(vjust = 0.5),
+              size = 5, color = "white") +
+  labs(x='Year', y='# Natural disasters', 
+        fill="State of emergency | Request for international assistance") +
+  theme_minimal() +
+  theme(axis.text.y = element_blank(),
+        legend.position = "bottom")
+
+em_dat |> 
+  count(year, call) |> 
+  mutate(pct = round(n / sum(n), 2), .by = year) |>
+  ggplot(aes(x=year, y=n, fill=call)) +
+    geom_bar(position="fill", stat="identity") +
+    geom_text(aes(label = scales::percent(pct, accuracy = 1)),
+            position = position_fill(vjust = 0.5),
+            size = 3, color = "white") +
+  theme_minimal() +
+  theme(axis.text.y = element_blank(),
+        legend.position = 'bottom') +
+  labs(x='Year', y='', fill="State of emergency or Request for international assistance")
+```
+
+-   Among 'large/reported',
+
+    -   large share are only "declaration".
+
+    -   declining (increasing) share of "appeal" ("declaration") only.
+
+```{r}
+
+table(em_dat$appeal, em_dat$declaration)
+
+em_dat |> 
+  filter(call == 'Yes') |> 
+  count(year, call_type) |> 
+  mutate(pct = round(n / sum(n), 2), .by = year) |>
+  ggplot(aes(x=year, y=n, fill=call_type)) +
+    geom_bar(position="fill", stat="identity") +
+    geom_text(aes(label = scales::percent(pct, accuracy = 1)),
+            position = position_fill(vjust = 0.5),
+            size = 3, color = "white") +
+  theme_minimal() +
+  theme(axis.text.y = element_blank()) +
+  labs(x='Year', y='', fill="Type")
+```
+
+**Are "large" disasters concentrated in specific countries?**
+
+-   "Declaration-only" events seem concentrated in high/middle-income countries.
+
+-   "Appeal-only" events are more in low-income countries.
+
+```{r}
+
+em_dat |> 
+  count(country, call_type) |> 
+  slice_max(n, n=10, by = call_type) |> 
+  ggplot(aes(x=reorder_within(country, n, call_type), y=n)) +
+  geom_col() +
+  scale_x_reordered() +
+  coord_flip() +
+  facet_wrap(~call_type, scales='free') +
+  theme_minimal() +
+  labs(x='', y='Number of events over te period 2000-22')
+```
+
+-   Hydrological events are the most common subgroup types, following by meteorological events.
+
+```{r}
+
+em_dat |> 
+  count(disaster_subgroup, call_type) |> 
+  slice_max(n, n=10, by = call_type) |> 
+  ggplot(aes(x=reorder_within(disaster_subgroup, n, call_type), y=n)) +
+  geom_col() +
+  scale_x_reordered() +
+  coord_flip() +
+  facet_wrap(~call_type, scales='free') +
+  theme_minimal() +
+  labs(x='', y='Number of events over te period 2000-22')
+```
+
+```{r}
+save(em_dat, file = here('data', 'data_emdat_clean.RData'))
+```
