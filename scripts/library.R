@@ -11,9 +11,6 @@ if(!"devtools" %in% installed.packages()) install.packages("devtools")
 if(!"lpdid" %in% installed.packages()) devtools::install_github("alexCardazzi/lpdid")
 library("lpdid")
 
-if (!require("fwildclusterboot")) install.packages('fwildclusterboot', repos ='https://s3alfisc.r-universe.dev')
-if (!require("leebounds")) remotes::install_github("haluong89-bcn/leebounds")
-
 if (!require("pacman")) install.packages("pacman")
 pacman::p_load(
   here,
@@ -21,6 +18,7 @@ pacman::p_load(
   readxl,
   MASS,
   tidyverse, # data cleaning and visualization
+  visdat, # display missingness
   ggplot2,
   pals,
   janitor,
@@ -36,7 +34,6 @@ pacman::p_load(
   did,
   didimputation,
   DIDmultiplegtDYN,
-  fwildclusterboot,
   margins,
   ggeffects, # plot predicted values (aka margins)
   lmtest, # calculate robust standard errors

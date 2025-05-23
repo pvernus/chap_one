@@ -40,7 +40,6 @@ data_combined <- data.table::rbindlist(data_list, fill = T)
 data_short <- data_combined |> 
   dplyr::select(1:26, 39, 44:54, 57:59, 62:67, 74:77, 78) |> # dplyr::select relevant vars
   mutate_if(is.character, str_trim) # delete white space before/after text
-
 ```
 
 # Data cleaning
@@ -54,18 +53,44 @@ We reduce the sample to projects with the following characteristics:
 -   **Remove**: (2) Revision, (5) Provisional data, (9) Net disbursements.
 -   **Keep**: (1) New activity reported, (3) Previously reported activity (increase/decrease of earlier commitment, disbursement on earlier commitment), (8) Commitment derived from Disbursement, and NAs.
 
+```{r}
+
+filter(data_short, !initial_report %in% c(2,5,9))
+
+
+
+data_calibrated <- copy(data_short)
+data_calibrated <- data_calibrated[!initial_report %in% c(2,5,9), 
+][!grepl("^[EFGH].*", aid_t) | !grepl("^(6|9)", purpose_code), 
+][!grepl('unspecified', recipient_name), 
+][(!is.na(usd_commitment_defl) & !is.na(usd_disbursement_defl)) | (!is.na(usd_commitment_defl) & usd_disbursement_defl != 0) | (usd_commitment_defl != 0 & !is.na(usd_disbursement_defl)) | (!usd_commitment_defl != 0 & !usd_disbursement_defl != 0)
+][flow_code %in% c(11, 13),]
+```
+
 **Cooperation modalities**
 
 -   **Remove**: project observations in provider countries e.g. (E) Scholarships and student costs in donor countries, (F) Debt Relief, (G) Administrative costs not included elsewhere, and (H) Other in-donor expenditures.
 -   **Keep**: (A) Budget support, (B) Core contributions and pooled programmes and funds, (C) Project-type interventions, (D) Experts and other technical assistance.
 
-**Recipient**: remove non-specified country/region.
+```{r}
+
+```
+
+**Recipient**:
+
+-   **Remove**: non-specified country/region.
+
+-   **Keep**: recipient countries.
+
+```{r}
+
+```
 
 **Funding**:
 
--   Remove: (i) observations with missing/null value for both commitment or disbursement variables; (ii) non-concessional official & private flows.
+-   **Remove**: (i) observations with missing/null value for both commitment or disbursement variables; (ii) non-concessional official & private flows.
 
--   Keep: grants and loans ODA.
+-   **Keep**: grants and loans ODA.
 
 > *Question: include "received" funds when no commitment and disbursement?*
 
@@ -119,7 +144,7 @@ The name of the agency can also be added manually by the provider, but reporting
 
 There are two variables with codes for channel of delivery: `channel_parent_category` (level 1) and `channel_code` (levels 2 and 3).
 
-To help the analysis, create a unique code variable using the most granular level when both `channel_parent_category` and `channel_code` are provided.
+To help the analysis, I create a unique code variable using the most granular level when both `channel_parent_category` and `channel_code` are provided.
 
 ```{r unique_channel_code_typology}
 
@@ -153,7 +178,7 @@ setDT(data_channel.code_unique)
 rm(data_calibrated, data_channel.channel_parent_code)
 ```
 
-Also, create a variable `channel_level` to specify the level of the most disaggregated channel available.
+I also create a variable `channel_level` to specify the level of the most disaggregated channel available.
 
 ```{r channel_level}
 
@@ -230,12 +255,20 @@ data_channel <- data_channel |>
 
 ```{r vars channel_bypass}
 
+channel_state = c(10000:12000)
+channel_nonstate = c(20000:63000)
+channel_nonstate_ngo = c(20000:23000, 51000)
+channel_nonstate_multi = c(40000:47000)
+channel_nonstate_priv = c(30000:32000, 60000:63000)
+channel_other = 90000
+
 data_channel <- data_channel |> 
   mutate(
+    channel_state = if_else(channel_parent_code_2024 %in% c(10000:12000), 1, 0),
     channel_nonstate = if_else(channel_parent_code_2024 %in% c(20000:63000), 1, 0),
-    channel_nonstate_ngo = if_else(channel_parent_code_2024 %in% c(20000:23000), 1, 0),
+    channel_nonstate_ngo = if_else(channel_parent_code_2024 %in% c(20000:23000, 51000), 1, 0),
     channel_nonstate_multi = if_else(channel_parent_code_2024 %in% c(40000:47000), 1, 0),
-    channel_nonstate_private = if_else(channel_parent_code_2024 %in% c(60000:63000), 1, 0),
+    channel_nonstate_priv = if_else(channel_parent_code_2024 %in% c(30000:32000, 60000:63000), 1, 0),
     channel_other = if_else(channel_parent_code_2024 == 90000, 1, 0)
   ) |> 
   relocate(starts_with('channel_bypass'), .after = channel_name_2024)
@@ -246,15 +279,14 @@ data_channel <- data_channel |>
 
 data_channel |> 
   mutate(channel_multin = case_when(
-    channel_parent_code_2024 < 20000 ~ "Public sector",
-    channel_parent_code_2024 %in% c(20000:23000) ~ "NGOs and Civil society",
+    channel_parent_code_2024 %in% c(10000:12000) ~ "Public sector",
+    channel_parent_code_2024 %in% c(20000:23000, 51000) ~ "NGOs and Civil society",
     channel_parent_code_2024 %in% c(40000:47000) ~ "Multilaterals",
-    channel_parent_code_2024 %in% c(60000:63000) ~ "Private sector",
+    channel_parent_code_2024 %in% c(30000:32000, 60000:63000) ~ "Private sector",
     .default = "Other"
   ))
 
 ```
-
 
 ```{r vars coop_modalities}
 
