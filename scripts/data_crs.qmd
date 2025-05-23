@@ -47,6 +47,31 @@ data_select <- data_import |>
 
 # Data cleaning
 
+## Identification variables
+
+I create four-digit ID variables for both donors and recipients.
+
+```{r id}
+
+# format donor_code values with leading zeros to ensure each value has 4 digits
+data_crs <- data_crs |> 
+  mutate(
+    donor_id = sprintf("%04d", donor_code),
+    recipient_id = sprintf("%04d", recipient_code)
+    ) |> 
+  relocate(donor_id, .after = donor_code) |> 
+  relocate(recipient_id, .after = recipient_code)
+```
+
+## Cohorts
+
+```{r cohort}
+
+data_crs <- data_crs |> 
+  mutate(cohort_donor = min(year), .by = donor_id) |> 
+  mutate(cohort_recipient = min(year), .by = recipient_id)
+```
+
 ## Calibrated sample
 
 We reduce the sample to projects with the following characteristics:
@@ -100,6 +125,14 @@ data_calibrated <- filter(data_calibrated, !grepl("^(91|93)|99820", purpose_code
 -   **Keep**: specified countries.
 
 ```{r recipient}
+
+# share of total commitments allocated at the regional level
+summarize(data_calibrated,
+          regional = sum(usd_commitment_defl[grepl("regional", recipient_name)], na.rm = T),
+          total = sum(usd_commitment_defl, na.rm = T),
+          reg_share_total = regional/total * 100
+          )
+
 data_calibrated <- filter(data_calibrated, !grepl('unspecified|regional', recipient_name))
 ```
 
