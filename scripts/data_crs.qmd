@@ -141,30 +141,10 @@ data_calibrated <- filter(data_calibrated, !grepl('unspecified|regional', recipi
 Duplicates are removed.
 
 ```{r dupes}
-data_calibrated <- unique(data_calibrated)
-```
-
-## Save
-
-```{r data_crs}
-
-# copy
-data_crs <- data_calibrated
-
-# save 
-save(data_crs,
-     file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\outcome\\data_crs.RData")
-
-# remove
-rm(list = ls())
+data_clean <- unique(data_calibrated)
 ```
 
 # Data transformation
-
-```{r load}
-
-load("C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\outcome\\data_crs.RData")
-```
 
 ## Channel of delivery
 
@@ -192,7 +172,7 @@ To help the analysis, I create a unique code variable using the most granular le
 ```{r data_channel}
 
 # Create a copy of the data
-df <- copy(data_crs)
+df <- copy(data_clean)
 
 # Rename columns
 setnames(df, old = "parent_channel_code", new = "channel_parent_code")
@@ -241,7 +221,7 @@ df |>
   gt()
 
 # Update data_channel
-data_channel <- copy(df)
+channel_level <- copy(df)
 ```
 
 ### Time consistency
@@ -271,8 +251,11 @@ delivery_crs_code <- read_xlsx(
          channel_code_2024 = channel_id, 
          channel_name_2024 = full_name_english)
 
+# copy
+df <- channel_level
+
 # merge w/ data set
-data_channel_code <- left_join(data_channel, delivery_crs_code,
+data_channel_code <- left_join(df, delivery_crs_code,
                            by = c('channel_code_unique' = 'channel_code_2024')) |>
   relocate(channel_parent_code_2024, .after = channel_parent_code) |> 
   relocate(channel_name_2024, .after = channel_name)
@@ -289,8 +272,9 @@ I create two new binary variables for State and non-State channel categories.
 
 > To do: create additional binary variables for channels sub-categories.
 
-```{r data_channel_cat}
+```{r channel_state}
 
+# define categories
 channel_state = c(10000:12000)
 channel_nonstate = c(20000:63000)
 # channel_nonstate_ngo = c(20000:23000, 51000)
@@ -298,12 +282,18 @@ channel_nonstate = c(20000:63000)
 # channel_nonstate_priv = c(30000:32000, 60000:63000)
 # channel_other = 90000
 
-data_channel <- data_channel_code |> 
+# copy
+df <- data_channel_code
+
+# create variable
+data_channel <- df |> 
   mutate(
-    channel_state = if_else(channel_parent_code_2024 %in% channel_state, 1, 0),
-    channel_nonstate = if_else(channel_parent_code_2024 %in% channel_nonstate, 1, 0)
-  ) |> 
-  relocate(channel_state:channel_nonstate, .after = channel_name_2024)
+    channel_state = fct(case_when(
+      channel_parent_code_2024 %in% channel_state ~"State",
+      channel_parent_code_2024 %in% channel_nonstate ~"non-State",
+      .default = "Other"
+    ))) |> 
+  relocate(channel_state, .after = channel_name_2024)
 
 ```
 
@@ -315,14 +305,62 @@ data_channel <- data_channel_code |>
 
 ```{r data_mod}
 
-data_mod <- data_channel |> 
+# define categories
+debt = c('F01')
+budget = c('A01', 'A02')
+core = c('B01', 'B02')
+pooled = c('B03', 'B031', 'B032', 'B033', 'B04')
+project = c('C01', 'D02')
+
+# copy
+df <- data_channel
+
+# create variable
+data_mod <- df |> 
   mutate(flow_modality = fct(case_when(
-    aid_t %in% c('A01', 'A02') ~ "Budget support",
-    aid_t %in% c('B01') ~ "Core contributions",
-    aid_t %in% c('B03', 'B031', 'B032', 'B033', 'B04') ~ "Pooled funding",
-    aid_t %in% c('C01', 'D02') ~ "Project-type interventions and Other technical assistance"
+    aid_t %in% debt ~ "Debt relief",
+    aid_t %in% budget ~ "Budget support",
+    aid_t %in% core ~ "Core contributions",
+    aid_t %in% pooled ~ "Pooled funding",
+    aid_t %in% project ~ "Project-type interventions and Other technical assistance"
   ))) |> 
   relocate(flow_modality, .after = aid_t)
+```
+
+## Sectors
+
+```{r data_sector}
+
+# define categories
+humanitarian = c(72010:74020)
+development = c(11110:60063)
+  sectoral = c(11110:43082)
+    infra = c(11110:25040)
+      infra_social = c(11110:16080)
+      infra_eco = c(21010:25040)
+    prod = c(31110:43082)
+  budget = 51010
+  inkind = c(52010:53040)
+  debt = c(60010:60063)
+
+# copy
+df <- data_mod
+  
+# create variables
+data_sector <- df |> 
+  mutate(
+    sector_hum = fct(case_when(
+      purpose_code %in% humanitarian ~ "Humanitarian",
+      purpose_code %in% development ~ "Development",
+      .default = "Other"
+  )),
+    sector_multi = fct(case_when(
+      purpose_code %in% humanitarian ~ "Humanitarian",
+      purpose_code %in% sectoral ~ "Development (sectoral)",
+      purpose_code %in% budget ~ "Budget support",
+      purpose_code %in% debt ~ "Debt relief",
+      ))) |> 
+  relocate(sector_hum:sector_multi, .after = aid_t)
 ```
 
 ## Save
@@ -330,7 +368,7 @@ data_mod <- data_channel |>
 ```{r}
 
 # copy
-data_crs <- data_mod
+data_crs <- data_sector
 
 # save
 save(data_crs, delivery_crs_code,

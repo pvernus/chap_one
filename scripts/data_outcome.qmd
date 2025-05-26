@@ -22,6 +22,29 @@ load("C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\outcome\\data_
 
 > To do: consider disbursements.
 
+```{r}
+
+data_crs |> 
+  group_by(flow_modality, channel_state) |> 
+  summarize(total_amount = sum(usd_commitment_defl, na.rm = T), .groups = 'drop') |> 
+  mutate(share_of_total = total_amount / sum(total_amount) * 100, .by = flow_modality) |> 
+  arrange(flow_modality)
+
+data_crs |> 
+  group_by(sector_hum, flow_modality, channel_state) |> 
+  summarize(total_amount = sum(usd_commitment_defl, na.rm = T), .groups = 'drop') |> 
+  mutate(share_of_total = total_amount / sum(total_amount) * 100, 
+         .by = sector_hum) |> 
+  arrange(sector_hum)
+
+data_crs |> 
+  group_by(sector_multi, flow_modality, channel_state) |> 
+  summarize(total_amount = sum(usd_commitment_defl, na.rm = T), .groups = 'drop') |> 
+  mutate(share_of_total = total_amount / sum(total_amount) * 100, 
+         .by = sector_multi) |> 
+  arrange(sector_multi)
+```
+
 ### Channels
 
 State/Official: Public Sector Institutions
@@ -43,7 +66,7 @@ non-State/non-Official: PPPs and Networks, Private Sector
 2. Budget support
 3. Social infrastructure & services
 4. Economic infrastructure & services
-5. Food and Commodity Assistance (in kind)
+5. Food Assistance (in kind) and Commodity Assistance (import support)
 6. Humanitarian (Prevention-Emergency-Reconstruction)
 7. Unallocated/Unspecified
 (In Donor)
