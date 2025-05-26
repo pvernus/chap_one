@@ -20,7 +20,54 @@ load("C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\outcome\\data_
 
 + Commitments in constant dollars
 
-> To do: consider disbursements.
++ Share of total commitments (%)
+
+> **To do**: consider disbursements.
+
+### Missing
+
+```{r}
+
+## missing
+
+# modality
+
+data_crs |> 
+#  filter(sector_code!=600) |>  
+  group_by(year) |> 
+  summarize(
+    total_amount = sum(usd_commitment_defl, na.rm = T),
+    na_amount = sum(usd_commitment_defl[is.na(flow_modality)], na.rm = T)
+    ) |> 
+  mutate(share_of_total = round(na_amount / total_amount * 100, 2))
+
+data_crs |> 
+  filter(year %in% c(2005:2009) & is.na(flow_modality)) |> 
+  filter(sector_code!=600) |> 
+  arrange(desc(usd_commitment_defl))
+
+data_crs |> 
+  filter(year %in% c(2005:2009) & is.na(flow_modality)) |> 
+  filter(sector_code!=600) |> 
+  group_by(donor_name, recipient_name) |> 
+  summarize(total = sum(usd_commitment_defl, na.rm = T)) |> 
+  arrange(desc(total))
+
+# channel
+
+data_crs |> 
+  filter(sector_code!=600) |>  
+  group_by(year) |> 
+  summarize(
+    total_amount = sum(usd_commitment_defl, na.rm = T),
+    na_amount = sum(usd_commitment_defl[is.na(channel_name_2024)], na.rm = T)) |> 
+  mutate(share_of_total = round(na_amount / total_amount * 100, 2))
+
+data_crs |> 
+  filter(sector_code!=600) |>
+  filter(year %in% c(2005:2009) & is.na(channel_name_2024)) |> 
+  arrange(desc(usd_commitment_defl))
+```
 
 ```{r}
 
@@ -30,52 +77,48 @@ data_crs |>
   mutate(share_of_total = total_amount / sum(total_amount) * 100, .by = flow_modality) |> 
   arrange(flow_modality)
 
+## sector (bi)
+# modality
 data_crs |> 
-  group_by(sector_hum, flow_modality, channel_state) |> 
+  group_by(sector_hum, flow_modality) |> 
+  summarize(total_amount = sum(usd_commitment_defl, na.rm = T), .groups = 'drop') |> 
+  mutate(share_of_total = total_amount / sum(total_amount) * 100, 
+         .by = sector_hum) |> 
+  arrange(sector_hum)
+# channel
+data_crs |> 
+  group_by(sector_hum, channel_state) |> 
   summarize(total_amount = sum(usd_commitment_defl, na.rm = T), .groups = 'drop') |> 
   mutate(share_of_total = total_amount / sum(total_amount) * 100, 
          .by = sector_hum) |> 
   arrange(sector_hum)
 
+## sector (multi)
+# modality
 data_crs |> 
-  group_by(sector_multi, flow_modality, channel_state) |> 
+  group_by(sector_multi, flow_modality) |> 
   summarize(total_amount = sum(usd_commitment_defl, na.rm = T), .groups = 'drop') |> 
-  mutate(share_of_total = total_amount / sum(total_amount) * 100, 
-         .by = sector_multi) |> 
-  arrange(sector_multi)
+  ungroup() |> 
+  group_by(sector_multi) |> 
+  mutate(share_of_total = round(total_amount / sum(total_amount) * 100, 2)) |> 
+  arrange(sector_multi, desc(share_of_total))
+# channel
+data_crs |> 
+  group_by(sector_multi, channel_state) |> 
+  summarize(total_amount = sum(usd_commitment_defl, na.rm = T), .groups = 'drop') |> 
+  ungroup() |> 
+  group_by(sector_multi) |> 
+  mutate(share_of_total = round(total_amount / sum(total_amount) * 100, 2)) |> 
+  arrange(sector_multi, desc(share_of_total))
 ```
-
-### Channels
-
-State/Official: Public Sector Institutions
-non-State/Official: Multilateral Organizations
-non-State/non-Official: NGOs and Civil Society, University, college or other teaching institution, research institute or think‑tank
-non-State/non-Official: PPPs and Networks, Private Sector
-
-### Co-operation modalities
-
-1. Debt relief
-2. Budget support: General and Sector
-3. Core contributions
-4. Pooled funding
-5. Project-type interventions and Other TA
-
-### Sectors
-
-1. Debt relief
-2. Budget support
-3. Social infrastructure & services
-4. Economic infrastructure & services
-5. Food Assistance (in kind) and Commodity Assistance (import support)
-6. Humanitarian (Prevention-Emergency-Reconstruction)
-7. Unallocated/Unspecified
-(In Donor)
 
 > **To do (1)**: cross-tables channels, modalities, and sectors + type of flow.
 
-> **To do (2)**: add new variable sector_main_code
+> **To do (2)**: add new variable sector_main_code.
 
 ## Unit of observation
+
+### Donor-Recipient pairs
 
 Following Faye and Niehaus (2012) and Arezki et al. (2025), I adopt a dyadic approach.
 
@@ -101,6 +144,7 @@ length(unique(data_crs$recipient_id))
 # pairs
 length(unique(data_crs$donor_id)) * length(unique(data_crs$recipient_id))
 ```
+
 ## Sample
 
 ```{r data_sample}
@@ -169,15 +213,6 @@ outcome <- outcome |>
     .default = iso3c )
     ) |> 
   relocate(iso3c, .after = recipient_name)
-```
-
-+ **Time**
-
-The channel of delivery became an *optional* reporting item on the new CRS++ reporting scheme in 2004 ([@dietrich2013]).
-
-```{r time}
-
-outcome <- filter(outcome, year > 2004)
 ```
 
 + **Duplicates**

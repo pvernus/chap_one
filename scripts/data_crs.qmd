@@ -36,7 +36,7 @@ data_import <- data.table::rbindlist(data_list, fill = T)
 
 # Data selection
 
-```{r data_select}
+```{r select}
 
 data_select <- data_import |> 
 # select variables
@@ -53,8 +53,11 @@ I create four-digit ID variables for both donors and recipients.
 
 ```{r id}
 
+# copy
+df <- data_select
+
 # format donor_code values with leading zeros to ensure each value has 4 digits
-data_crs <- data_crs |> 
+df <- df |> 
   mutate(
     donor_id = sprintf("%04d", donor_code),
     recipient_id = sprintf("%04d", recipient_code)
@@ -67,7 +70,7 @@ data_crs <- data_crs |>
 
 ```{r cohort}
 
-data_crs <- data_crs |> 
+df <- df |> 
   mutate(cohort_donor = min(year), .by = donor_id) |> 
   mutate(cohort_recipient = min(year), .by = recipient_id)
 ```
@@ -76,8 +79,12 @@ data_crs <- data_crs |>
 
 We reduce the sample to projects with the following characteristics:
 
-```{r data_calibrated}
-data_calibrated <- data_select
+### Year
+
+The channel of delivery became an *optional* reporting item on the new CRS++ reporting scheme in 2004 ([@dietrich2013]).
+
+```{r year}
+df <- filter(df, year > 2004)
 ```
 
 ### Nature of submission
@@ -86,7 +93,7 @@ data_calibrated <- data_select
 -   **Keep**: (1) New activity reported, (3) Previously reported activity (increase/decrease of earlier commitment, disbursement on earlier commitment), (8) Commitment derived from Disbursement, and NAs.
 
 ```{r submission}
-data_calibrated <- filter(data_calibrated, !initial_report %in% c(2,5,9))
+df <- filter(df, !initial_report %in% c(2,5,9))
 ```
 
 ### Type of flow
@@ -96,7 +103,7 @@ data_calibrated <- filter(data_calibrated, !initial_report %in% c(2,5,9))
 -   **Keep**: grants (11) and loans ODA (13).
 
 ```{r flow}
-data_calibrated <- filter(data_calibrated, flow_code %in% c(11, 13))
+df <- filter(df, flow_code %in% c(11, 13))
 ```
 
 ### Cooperation modalities
@@ -105,7 +112,7 @@ data_calibrated <- filter(data_calibrated, flow_code %in% c(11, 13))
 -   **Keep**: (A) Budget support, (B) Core contributions and pooled programmes and funds, (C) Project-type interventions, (D) Experts and other technical assistance, (F) Debt relief.
 
 ```{r modality}
-data_calibrated <- filter(data_calibrated, !grepl("^[EGH].*", aid_t) & aid_t != "D01")
+df <- filter(df, !grepl("^[EGH].*", aid_t) & aid_t != "D01")
 ```
 
 ### Purposes
@@ -115,7 +122,7 @@ data_calibrated <- filter(data_calibrated, !grepl("^[EGH].*", aid_t) & aid_t != 
 -   **Keep**: all other sectors.
 
 ```{r purpose}
-data_calibrated <- filter(data_calibrated, !grepl("^(91|93)|99820", purpose_code))
+df <- filter(df, !grepl("^(91|93)|99820", purpose_code))
 ```
 
 ### Recipients
@@ -127,13 +134,13 @@ data_calibrated <- filter(data_calibrated, !grepl("^(91|93)|99820", purpose_code
 ```{r recipient}
 
 # share of total commitments allocated at the regional level
-summarize(data_calibrated,
+summarize(df,
           regional = sum(usd_commitment_defl[grepl("regional", recipient_name)], na.rm = T),
           total = sum(usd_commitment_defl, na.rm = T),
           reg_share_total = regional/total * 100
           )
 
-data_calibrated <- filter(data_calibrated, !grepl('unspecified|regional', recipient_name))
+df <- filter(df, !grepl('unspecified|regional', recipient_name))
 ```
 
 ## Duplicates
@@ -141,7 +148,7 @@ data_calibrated <- filter(data_calibrated, !grepl('unspecified|regional', recipi
 Duplicates are removed.
 
 ```{r dupes}
-data_clean <- unique(data_calibrated)
+data_clean <- unique(df)
 ```
 
 # Data transformation
@@ -322,7 +329,8 @@ data_mod <- df |>
     aid_t %in% budget ~ "Budget support",
     aid_t %in% core ~ "Core contributions",
     aid_t %in% pooled ~ "Pooled funding",
-    aid_t %in% project ~ "Project-type interventions and Other technical assistance"
+    aid_t %in% project ~ "Project-type interventions and Other technical assistance",
+    .default = "Other"
   ))) |> 
   relocate(flow_modality, .after = aid_t)
 ```
