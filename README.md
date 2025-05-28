@@ -23,3 +23,5 @@
 - add variables as % of total commitments
 
 ### data_magnitude
+
+- merge weather and disaster datasets
