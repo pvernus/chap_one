@@ -276,8 +276,8 @@ summarize(clim_data,
 ```{r load}
 
 # Load datasets
-load(here('data', 'data_emdat_clean.RData')) # EM-DAT
-load(here('source', 'treatment', 'gdis', 'pend-gdis-1960-2018-disasterlocations.Rdata')) # GDIS
+load(file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\treatment\\emdat\\data_emdat.RData") # EM-DAT
+load(file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\treatment\\gdis\\data_gdis.RData") # GDIS
 ```
 
 ```{r clean_emdat}
