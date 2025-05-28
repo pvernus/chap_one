@@ -16,6 +16,7 @@ pacman::p_load(
   here,
   data.table,
   readxl,
+  haven,
   MASS,
   tidyverse, # data cleaning and visualization
   visdat, # display missingness
@@ -24,6 +25,7 @@ pacman::p_load(
   janitor,
   easystats, # easystats::install_suggested()
   countrycode,
+  sf,
   questionr,
   gtsummary,
   gt,

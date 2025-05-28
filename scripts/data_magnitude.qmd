@@ -11,107 +11,159 @@ source(here::here('scripts', 'library.R'))
 
 # Hazard severity (S)
 
-## Precipitation
+## Wet
 
-```{r import}
+```{r import_wet}
 
-## Define the directory
-data_path <- here::here('source', 'treatment', 'mswep')
+# define the directory
+data_path <- "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\source\\treatment\\mswep\\wet"
 
-## Define the file pattern
-# sd: values = nb of days w/ SPI1 >= +2.0
-sd_files <- list.files(data_path, pattern = '^floodday_sd', full.names = TRUE)
-# max: values = cum.sum precipitation (mm) for x wettest day(s)
-max_files <- list.files(data_path, pattern = '^floodday_max', full.names = TRUE)
+# define the file pattern
+files <- list.files(data_path, full.names = TRUE)
 
-## Import all .dta files into a list
-data_sd_list <- lapply(sd_files, haven::read_dta)
-data_max_list <- lapply(max_files, haven::read_dta)
-
-## Name the list
-# sd
-names(data_sd_list) <- sapply(basename(sd_files), function(x) {
-  substr(x, nchar(x) - 8, nchar(x) - 4) # Extract the last three characters before '.dta'
-})
-# max
-names(data_max_list) <- sapply(basename(max_files), function(x) {
-  substr(x, nchar(x) - 9, nchar(x) - 4) # Extract the last three characters before '.dta'
-})
-
-## Clean variables' names
-data_sd_list <- lapply(data_sd_list, janitor::clean_names) # sd
-data_max_list <- lapply(data_max_list, janitor::clean_names) # max
-
-## Pivot from wide to long: year
-# sd 
-data_sd_list <- lapply(data_sd_list, function(df) {
-  pivot_longer(df, 
-               cols = -geo_id, 
-               names_to = 'year', 
-               names_prefix = 'test', 
-               values_to = 'value')
+# import and arrange dta files
+data_list <- lapply(files, function(file) {
+  # read file
+  data <- haven::read_dta(file)
+  file_name <- basename(file)
+   # create indice variable
+  if (grepl("rx1d", file_name)) {
+    data$indice <- "rx1d"
+  } else if (grepl("rx5d", file_name)) {
+    data$indice <- "rx5d"
+  }
+  # create threshold variable
+  if (grepl("p90", file_name)) {
+    data$threshold <- "p90"
+  } else if (grepl("p95", file_name)) {
+    data$threshold <- "p95"
+  } else if (grepl("p99", file_name)) {
+    data$threshold <- "p99"
+  }
+  # rename variable
+  names(data) <- ifelse(grepl("^p", names(data)), "value", names(data))
+  
+  return(data)
 })
 
-# max
-data_max_list <- lapply(data_max_list, function(df) {
-  pivot_longer(df, 
-               cols = -geo_id, 
-               names_to = 'year', 
-               names_prefix = 'm', 
-               values_to = 'value')
+# rename list objects
+names(data_list) <- sapply(basename(files), function(x) {
+  x <- sub("^geo_id_", "", x)
+  sub("\\.dta$", "", x)
 })
 
-## rename value columns
-# sd
-data_sd_list <- lapply(names(data_sd_list), function(name) {
-  df <- data_sd_list[[name]]
-  colnames(df)[colnames(df) == 'value'] <- name
-  df
-})
-
-data_sd_list <- lapply(data_sd_list, function(df) {
-  colnames(df)[3] <- sub("_.*", "", colnames(df)[3])
-  return(df)
-})
-# max
-data_max_list <- lapply(names(data_max_list), function(name) {
-  df <- data_max_list[[name]]
-  colnames(df)[colnames(df) == 'value'] <- name
-  df
-})
-
-data_max_list <- lapply(data_max_list, function(df) {
-  colnames(df)[3] <- sub("_.*", "", colnames(df)[3])
-  return(df)
-})
-
-## Pivot: value
-#
-data_sd_list <- lapply(data_sd_list, function(df) {
-  pivot_longer(df, 
-               cols = -c(geo_id, year), 
-               names_to = 'prec', 
-               values_to = 'prec_value')
-})
-# max
-data_max_list <- lapply(data_max_list, function(df) {
-  pivot_longer(df, 
-               cols = -c(geo_id, year), 
-               names_to = 'prec', 
-               values_to = 'prec_value')
-})
-
-## join elements of the list
-# sd
-data_sd <- reduce(data_sd_list, bind_rows)
-# max
-data_max <- reduce(data_max_list, bind_rows)
+# combine list elements
+data_wet <- do.call(rbind, data_list)
 
 ## remove useless objects
-rm(data_sd_list, data_max_list)
+rm(data_list)
 ```
 
-```{r}
+## Dry
+
+```{r import_dry}
+
+# define the directory
+data_path <- "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\source\\treatment\\mswep\\dry"
+
+# define the file pattern
+files <- list.files(data_path, full.names = TRUE)
+
+# import and arrange dta files
+data_list <- lapply(files, function(file) {
+  # read file
+  data <- haven::read_dta(file)
+  file_name <- basename(file)
+   # create indice variable
+  if (grepl("rx90d", file_name)) {
+    data$indice <- "rx90d"
+  } else if (grepl("rx180d", file_name)) {
+    data$indice <- "rx180d"
+  }
+  # create threshold variable
+  if (grepl("p10", file_name)) {
+    data$threshold <- "p10"
+  } else if (grepl("p5", file_name)) {
+    data$threshold <- "p5"
+  } else if (grepl("p1", file_name)) {
+    data$threshold <- "p1"
+  }
+  # rename variable
+  names(data) <- ifelse(grepl("^p", names(data)), "value", names(data))
+  
+  return(data)
+})
+
+# rename list objects
+names(data_list) <- sapply(basename(files), function(x) {
+  x <- sub("^geo_id_", "", x)
+  sub("\\.dta$", "", x)
+})
+
+# combine list elements
+data_dry <- do.call(rbind, data_list)
+
+## remove useless objects
+rm(data_list)
+```
+
+## Hot
+
+```{r import_hot}
+
+# define the directory
+data_path <- "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\source\\treatment\\era5\\temperature"
+
+# define the file pattern
+files <- list.files(data_path, full.names = TRUE)
+
+# import and arrange dta files
+data_list <- lapply(files, function(file) {
+  # read file
+  data <- haven::read_dta(file)
+  file_name <- basename(file)
+   # create indice variable
+  if (grepl("tmax1d", file_name)) {
+    data$indice <- "tmax1d"
+  } else if (grepl("tmax5d", file_name)) {
+    data$indice <- "tmax5d"
+  }
+  # create threshold variable
+  if (grepl("p90", file_name)) {
+    data$threshold <- "p90"
+  } else if (grepl("p95", file_name)) {
+    data$threshold <- "p95"
+  } else if (grepl("p99", file_name)) {
+    data$threshold <- "p99"
+  }
+  # rename variable
+  names(data) <- ifelse(grepl("^p", names(data)), "value", names(data))
+  
+  return(data)
+})
+
+# rename list objects
+names(data_list) <- sapply(basename(files), function(x) {
+  x <- sub("^geo_id_", "", x)
+  sub("\\.dta$", "", x)
+})
+
+# combine list elements
+data_hot <- do.call(rbind, data_list)
+
+## remove useless objects
+rm(data_list)
+```
+
+## Wind
+
+```{r import_wind}
+
+```
+
+
+
+```{r summary_rainfall}
 
 ## summary stat.
 # sd
@@ -195,6 +247,10 @@ n_distinct(data_max$geo_id)
 data_prec <- rbind(data_sd, data_max)
 
 ```
+
+## Temperature
+
+## Wind
 
 ## Disaster events
 
