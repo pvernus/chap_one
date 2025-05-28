@@ -26,22 +26,22 @@ data_list <- lapply(files, function(file) {
   # read file
   data <- haven::read_dta(file)
   file_name <- basename(file)
+  # rename variable
+  names(data) <- ifelse(grepl("^p", names(data)), "value", names(data))
    # create indice variable
   if (grepl("rx1d", file_name)) {
     data$indice <- "rx1d"
   } else if (grepl("rx5d", file_name)) {
     data$indice <- "rx5d"
   }
-  # create threshold variable
+  # create percentile variable
   if (grepl("p90", file_name)) {
-    data$threshold <- "p90"
+    data$percentile <- "p90"
   } else if (grepl("p95", file_name)) {
-    data$threshold <- "p95"
+    data$percentile <- "p95"
   } else if (grepl("p99", file_name)) {
-    data$threshold <- "p99"
+    data$percentile <- "p99"
   }
-  # rename variable
-  names(data) <- ifelse(grepl("^p", names(data)), "value", names(data))
   
   return(data)
 })
@@ -74,23 +74,23 @@ data_list <- lapply(files, function(file) {
   # read file
   data <- haven::read_dta(file)
   file_name <- basename(file)
+  # rename variable
+  names(data) <- ifelse(grepl("^p", names(data)), "value", names(data))  
    # create indice variable
   if (grepl("rx90d", file_name)) {
     data$indice <- "rx90d"
   } else if (grepl("rx180d", file_name)) {
     data$indice <- "rx180d"
   }
-  # create threshold variable
+  # create percentile variable
   if (grepl("p10", file_name)) {
-    data$threshold <- "p10"
+    data$percentile <- "p10"
   } else if (grepl("p5", file_name)) {
-    data$threshold <- "p5"
+    data$percentile <- "p5"
   } else if (grepl("p1", file_name)) {
-    data$threshold <- "p1"
+    data$percentile <- "p1"
   }
-  # rename variable
-  names(data) <- ifelse(grepl("^p", names(data)), "value", names(data))
-  
+
   return(data)
 })
 
@@ -122,23 +122,23 @@ data_list <- lapply(files, function(file) {
   # read file
   data <- haven::read_dta(file)
   file_name <- basename(file)
+  # rename variable
+  names(data) <- ifelse(grepl("^p", names(data)), "value", names(data))  
    # create indice variable
   if (grepl("tmax1d", file_name)) {
     data$indice <- "tmax1d"
   } else if (grepl("tmax5d", file_name)) {
     data$indice <- "tmax5d"
   }
-  # create threshold variable
+  # create percentile variable
   if (grepl("p90", file_name)) {
-    data$threshold <- "p90"
+    data$percentile <- "p90"
   } else if (grepl("p95", file_name)) {
-    data$threshold <- "p95"
+    data$percentile <- "p95"
   } else if (grepl("p99", file_name)) {
-    data$threshold <- "p99"
+    data$percentile <- "p99"
   }
-  # rename variable
-  names(data) <- ifelse(grepl("^p", names(data)), "value", names(data))
-  
+
   return(data)
 })
 
@@ -159,98 +159,117 @@ rm(data_list)
 
 ```{r import_wind}
 
+# define the directory
+data_path <- "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\source\\treatment\\era5\\wind"
+
+# define the file pattern
+files <- list.files(data_path, full.names = TRUE)
+
+# import and arrange dta files
+data_list <- lapply(files, function(file) {
+  # read file
+  data <- haven::read_dta(file)
+  file_name <- basename(file)
+  # rename variable
+  names(data) <- ifelse(grepl("^p", names(data)), "value", names(data))  
+   # create indice variable
+  data$indice <- "wmean1d"
+  # create percentile variable
+  if (grepl("p90", file_name)) {
+    data$percentile <- "p90"
+  } else if (grepl("p95", file_name)) {
+    data$percentile <- "p95"
+  } else if (grepl("p99", file_name)) {
+    data$percentile <- "p99"
+  }
+  
+  return(data)
+})
+
+# rename list objects
+names(data_list) <- sapply(basename(files), function(x) {
+  x <- sub("^geo_id_", "", x)
+  sub("\\.dta$", "", x)
+})
+
+# combine list elements
+data_wind <- do.call(rbind, data_list)
+
+## remove useless objects
+rm(data_list)
 ```
 
+```{r}
 
-
-```{r summary_rainfall}
-
-## summary stat.
-# sd
-summary(data_sd$prec_value)
-# max
-summary(data_max$prec_value)
+# save
+save(data_wet, data_dry, data_hot, data_wind,
+     file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\treatment\\data_clim.RData")
 ```
 
-```{r plot_density}
+```{r clim_data}
 
-## visualize distributions
-## density
-# sd
-data_sd |> 
-  ggplot(aes(x = prec_value, group=prec)) +
-  geom_density(aes(colour=prec, fill = prec), alpha = .3) +
-  theme_light()
-# max
-data_max |> 
-  ggplot(aes(x = prec_value, group=prec)) +
-  geom_density(aes(colour=prec, fill = prec), alpha = .3) +
-  theme_light()
+# create list
+clim_list <- list(data_wet, data_dry, data_hot, data_wind)
+# combine list elements
+clim_data <- do.call(rbind, clim_list)
 
+# create variables 
+clim_data <- clim_data |> 
+  mutate(
+    threshold = case_when(
+      percentile == "p1" | percentile == "p99" ~ 3.65,
+      percentile == "p5" | percentile == "p95" ~ 18.25,
+      percentile == "p10" | percentile == "p90" ~ 36.5),
+    extreme = ifelse(value >= threshold, 1, 0),
+    year = as.double(year),
+    percentile = factor(percentile, levels=c("p1", "p5", "p10", "p90", "p95", "p99"))
+    )
+
+# summary
+summary(clim_data)
 ```
 
-```{r plot_stat_desc}
+```{r}
 
-### visualize trends
+## facet by indice
+# mean value
+summarize(clim_data,
+          mean_value = mean(value),
+          .by = c(year, indice)) |> 
+  filter(year <= 2018) |> 
+  ggplot(aes(x = year, y = mean_value)) +
+  geom_line() +
+  geom_smooth(method=lm) +
+  facet_wrap(~indice) +
+  theme_light() +
+  labs(
+    x = "",
+    y = "Mean days > threshold"
+  )
 
-## mean
-# sd
-summarize(data_sd, mean = mean(prec_value), .by = c('year', 'prec')) |> 
-  ggplot(aes(x = year, y = mean, group = prec)) +
-  geom_line(aes(colour = prec)) +
-  labs(y = 'Mean # of days > prec') +
-  theme_light()
-# max
-summarize(data_max, mean = mean(prec_value), .by = c('year', 'prec')) |> 
-  ggplot(aes(x = year, y = mean, group = prec)) +
-  geom_line(aes(colour = prec)) +
-  labs(y = 'Mean max.cum. precipitation (mm)') +
-  theme_light()
- 
-## median
-# sd
-summarize(data_sd, median = median(prec_value), .by = c('year', 'prec')) |> 
-  ggplot(aes(x = year, y = median, group = prec)) +
-  geom_line(aes(colour = prec)) +
-  labs(y = 'Median # of days > prec') +
-  theme_light()
-# max
-summarize(data_max, median = median(prec_value), .by = c('year', 'prec')) |> 
-  ggplot(aes(x = year, y = median, group = prec)) +
-  geom_line(aes(colour = prec)) +
-  labs(y = 'Median max.cum. precipitation (mm)') +
-  theme_light()
+# mean extreme
+# Define the color palette
+color_palette <- c("p1" = "#E91300", "p99" = "#E91300",
+                   "p5" = "#FF912F", "p95" = "#FF912F",
+                   "p10" = "#FFD17A", "p90" = "#FFD17A")
+# plot
+summarize(clim_data,
+          mean_extr = mean(extreme),
+          .by = c(year, indice, percentile)) |> 
+  filter(year <= 2018) |> 
+  ggplot(aes(x = year, y = mean_extr, color = percentile)) +
+  geom_line() +
+  geom_smooth(method=lm, se = FALSE) +
+  scale_color_manual(values = color_palette) +
+  facet_wrap(~indice) +
+  theme_light() +
+  labs(
+    x = "",
+    y = "Proportion of extreme events (days > threshold)"
+  )
 
-## IQR
-# sd
-summarize(data_sd, IQR = IQR(prec_value), .by = c('year', 'prec')) |> 
-  ggplot(aes(x = year, y = IQR, group = prec)) +
-  geom_line(aes(colour = prec)) +
-  labs(y = 'IQR # of days > prec') +
-  theme_light()
-# max
-summarize(data_max, IQR = IQR(prec_value), .by = c('year', 'prec')) |> 
-  ggplot(aes(x = year, y = IQR, group = prec)) +
-  geom_line(aes(colour = prec)) +
-  labs(y = 'IQR max.cum. precipitation (mm)') +
-  theme_light()
 
 ```
-
-```{r merge_prec}
-
-## compare unique number of geo_id (identifier) 
-n_distinct(data_sd$geo_id)
-n_distinct(data_max$geo_id)
-
-## bind precipitation data 
-data_prec <- rbind(data_sd, data_max)
-
-```
-
-## Temperature
-
-## Wind
 
 ## Disaster events
 
