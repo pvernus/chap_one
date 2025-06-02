@@ -11,7 +11,9 @@ source(here::here('scripts', 'library.R'))
 
 # Hazard severity (S)
 
-## Wet
+## Extreme weather events
+
+### Wet
 
 ```{r import_wet}
 
@@ -59,7 +61,7 @@ data_wet <- do.call(rbind, data_list)
 rm(data_list)
 ```
 
-## Dry
+### Dry
 
 ```{r import_dry}
 
@@ -107,7 +109,7 @@ data_dry <- do.call(rbind, data_list)
 rm(data_list)
 ```
 
-## Hot
+### Hot
 
 ```{r import_hot}
 
@@ -155,7 +157,7 @@ data_hot <- do.call(rbind, data_list)
 rm(data_list)
 ```
 
-## Wind
+### Wind
 
 ```{r import_wind}
 
@@ -199,22 +201,17 @@ data_wind <- do.call(rbind, data_list)
 rm(data_list)
 ```
 
-```{r}
+### All
 
-# save
-save(data_wet, data_dry, data_hot, data_wind,
-     file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\treatment\\data_clim.RData")
-```
-
-```{r clim_data}
+```{r data_clim}
 
 # create list
-clim_list <- list(data_wet, data_dry, data_hot, data_wind)
+list_clim <- list(data_wet, data_dry, data_hot, data_wind)
 # combine list elements
-clim_data <- do.call(rbind, clim_list)
+data_clim <- do.call(rbind, list_clim)
 
 # create variables 
-clim_data <- clim_data |> 
+data_clim <- data_clim |> 
   mutate(
     threshold = case_when(
       percentile == "p1" | percentile == "p99" ~ 3.65,
@@ -226,14 +223,19 @@ clim_data <- clim_data |>
     )
 
 # summary
-summary(clim_data)
+summary(data_clim)
+```
+```{r}
+# save
+save(data_wet, data_dry, data_hot, data_wind, data_clim,
+     file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\treatment\\data_clim.RData")
 ```
 
 ```{r}
 
 ## facet by indice
 # mean value
-summarize(clim_data,
+summarize(data_clim,
           mean_value = mean(value),
           .by = c(year, indice)) |> 
   filter(year <= 2018) |> 
@@ -253,7 +255,7 @@ color_palette <- c("p1" = "#E91300", "p99" = "#E91300",
                    "p5" = "#FF912F", "p95" = "#FF912F",
                    "p10" = "#FFD17A", "p90" = "#FFD17A")
 # plot
-summarize(clim_data,
+summarize(data_clim,
           mean_extr = mean(extreme),
           .by = c(year, indice, percentile)) |> 
   filter(year <= 2018) |> 
@@ -268,7 +270,6 @@ summarize(clim_data,
     y = "Proportion of extreme events (days > threshold)"
   )
 
-
 ```
 
 ## Disaster events
@@ -277,16 +278,18 @@ summarize(clim_data,
 
 # Load datasets
 load(file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\treatment\\emdat\\data_emdat.RData") # EM-DAT
-load(file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\treatment\\gdis\\data_gdis.RData") # GDIS
+load(file = file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\treatment\\data_gdis.RData") # GDIS
 ```
+
+### EM-DAT
 
 ```{r clean_emdat}
 
 ## EMDAT
 data_emdat_short <- data_emdat |> 
-  dplyr::select(dis_no, classification_key, disaster_type, iso, country, location, start_year, end_year, last_update) |> 
+  select(dis_no, classification_key, disaster_type, iso, country, location, start_year, end_year, last_update) |> 
   filter(start_year %in% 2000:2018) |> # time period
-  filter(grepl('nat-hyd-flo|nat-cli-dro', classification_key)) |> # disaster type
+  filter(grepl('nat-hyd-flo|nat-cli-dro|nat-met-sto|nat-met-ext-hea', classification_key)) |> # disaster type
   mutate(disasterno = stringr::str_sub(dis_no, end = -5)) |> 
   mutate(iso3c = countrycode(sourcevar = country,
                              origin = 'country.name',
@@ -296,12 +299,11 @@ data_emdat_short <- data_emdat |>
 # NOTE: Canary Islands
     country == "Canary Islands" ~ "ESP",
 # NOTE: Serbia Montenegro (iso==SCG)
-# In variable 'location', we can fin the name of one of the two countries at the end of the char. string
-# I assume that it provides the true location
+# In variable 'location', we can find the name of one of the two countries at the end of the character string. I assume that it provides the true location.
     iso == "SCG" & grepl("Serbia)$", str_squish(location)) ~ "SRB",
     iso == "SCG" & grepl("Montenegro)$", str_squish(location)) ~ "MNE",
 # NOTE: Kosovo
-# Some obs.  in Kosovo in GDIS, but in Serbia in EMDAT
+# Some obs. are located in Kosovo in GDIS, but in Serbia in EMDAT
 # Kosovo is included in OECD CRS since 2009 (declaration of independence in 2008)
 # Rule: if year < 2009 => Serbia (SRB) & if year >= 2009 => Kosovo (XKX)
 # In EMDAT, two obs. don't apply to this rule
@@ -321,16 +323,18 @@ data_emdat_short <- data_emdat |>
 
 ```
 
+### GDIS
+
 ```{r clean_gdis}
 
 ## GDIS
 data_gdis <- sf::st_set_geometry(GDIS_disasterlocations, NULL) # remove geometry
 data_gdis_short <- data_gdis |> 
-  dplyr::select(disasterno, dis_id = id, geo_id, disastertype, iso3, country) |> 
+  select(disasterno, dis_id = id, geo_id, disastertype, iso3, country) |> 
   mutate(year = as.numeric(substr(data_gdis$disasterno, 1, 4))) |> # time period
   filter(year >= 2000) |> 
   mutate(disastertype = trimws(disastertype)) |> # disaster type
-  filter(disastertype %in% c('flood', 'drought')) |> 
+  filter(disastertype %in% c('flood', 'drought', 'storm', 'extreme temperature')) |> 
   mutate(iso3c = countrycode(sourcevar = country,
                              origin = 'country.name',
                              destination = 'iso3c'
@@ -360,88 +364,87 @@ length(unique(data_gdis_short$disasterno))
 length(unique(data_emdat_short$disasterno))
 
 ## events in gdis, missing in emdat
-anti_join(distinct(data_gdis_short, disasterno),
+anti_join(distinct(data_gdis_short, disasterno, disastertype),
           distinct(data_emdat_short, disasterno),
           by = "disasterno")
-# NOTE: 9 events in GDIS w/out a match in EMDAT
+# NOTE: 163 events in GDIS w/out a match in EMDAT
 
 ## events in emdat, missing in gdis
-anti_join(distinct(data_emdat_short, disasterno, start_year),
+anti_join(distinct(data_emdat_short, disasterno, disaster_type),
           distinct(data_gdis_short, disasterno),
           by = "disasterno")
-# NOTE: 138 events in EMDAT w/out a match in GDIS
+# NOTE: 246 events in EMDAT w/out a match in GDIS
 
-# Note sure why. Not what I would expect, as EMDAT has been updated after GDIS
-# disasterno==2004-0568: classified as storm in emdat vs. flood in gdis
-# For the rest, maybe recent updates in EMDAT deleted/changes some disasterno included in GDIS?
-
+# Not sure why.
+# Some events missing in EMDAT are due to *cold* extreme temperature events. GDIS does not differentiate between hot and cold extreme temperature.
+# Note that EMDAT has been updated regularly *after* GDIS publication. So maybe missing events are due to deleted/added/modified event that have occurred following an update.
 ```
 
 ```{r compare_data_freq}
 
-## compare events frequency each year, by disaster type
-# gdis
-summarize(data_gdis_short,
-          n = length(unique(disasterno)),
-          .by = c(year, disastertype)) |> 
-  arrange(year) |> 
-  ggplot(aes(x=year, y=n)) +
-  geom_line() +
-  facet_wrap(~disastertype, scales = 'free_y') +
-  theme_light()
-# emdat
-summarize(data_emdat_short,
-          n = length(unique(disasterno)),
-          .by = c(start_year, disaster_type)) |> 
-  arrange(start_year) |> 
-  ggplot(aes(x=start_year, y=n)) +
-  geom_line() +
-  facet_wrap(~disaster_type, scales = 'free_y') +
-  theme_light()
+year_event_emdat = data_emdat_short |> 
+  select(disaster_type, year = start_year, disasterno) |> 
+  summarize(n = length(unique(disasterno)),
+           .by = c(year, disaster_type)) |> 
+  mutate(source = "emdat",
+         disaster_type = tolower(disaster_type))
 
+year_event_gdis = data_gdis_short |> 
+  select(disaster_type = disastertype, year, disasterno) |> 
+  summarize(n = length(unique(disasterno)),
+           .by = c(year, disaster_type)) |> 
+  mutate(source = "gdis")
+
+year_event = rbind(year_event_emdat, year_event_gdis)
+
+ggplot(year_event, aes(x = year, y = n, color = source)) +
+  geom_line() + 
+  facet_wrap(~ disaster_type, scales = "free_y") +
+  theme_light() +
+  labs(y = "Frequency")
 ```
 
 ```{r join_gdis_emdat}
 
-## merge gdis and emdat (by = disasterno)
-join_gdis_emdat <- left_join(data_gdis_short, data_emdat_short, 
-                             by = c('disasterno', 'iso3c'),
+emdat = data_emdat_short |> 
+  select(disasterno, disaster_type, country, iso3c, start_year, end_year) |> 
+  mutate(disaster_type = tolower(disaster_type))
+
+gdis = data_gdis_short |> 
+  select(disasterno, disaster_type = disastertype, country, iso3c, year, geo_id)
+
+# merge
+join_gdis_emdat <- left_join(gdis, emdat, 
+                             by = c('disasterno', 'iso3c'), 
                              suffix = c('_gdis', '_emdat'))
+
+# difference in disaster type classification
+join_gdis_emdat |> 
+  filter(disaster_type_gdis != disaster_type_emdat)
+# NOTE: not an issue. Only one event in Italy (Storm/Flood)
+
+# difference in year
+join_gdis_emdat |> 
+  filter(year < start_year | year > end_year)
+# NOTE: five events where different specified year between EMDAT and GDIS. For all of them, GDIS event starts one year before same EMDAT event.
+
+# Missing data
+join_gdis_emdat |> 
+  filter(is.na(disasterno))
 ```
 
-```{r missing_data}
+```{r save}
 
-## Missing data
-# by disaster type
-join_gdis_emdat |> 
-  filter(is.na(dis_no)) |> 
-  janitor::tabyl(disastertype) |> 
-  arrange(desc(n))
-
-# by country
-join_gdis_emdat |> 
-  filter(is.na(dis_no)) |> 
-  janitor::tabyl(iso3c) |> 
-  arrange(desc(n))
-
-# number of country per disaster-ID with missing data in em-dat
-join_gdis_emdat |> 
-  filter(is.na(dis_no)) |>
-  summarize(n = n_distinct(iso3c), .by = disasterno) |> 
-  arrange(desc(n))
-
+save(join_gdis_emdat, file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\treatment\\join_gdis_emdat.RData")
 ```
 
-## Precipitation by disaster event
+## Merge weather-disaster events
 
 ```{r data_severity}
 
-## merge disaster and precipitation datasets (by = geo_id)
-data_severity <- left_join(data_prec, join_gdis_emdat, 
-          by = c('geo_id'),
-          suffix = c('', '_dis')) |> 
-  mutate(year = as.numeric(year))
-
+data_severity <- left_join(data_clim, join_gdis_emdat, 
+          by = "geo_id",
+          suffix = c('', '_dis'))
 ```
 
 ```{r check_obs}

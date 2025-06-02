@@ -1,0 +1,41 @@
+---
+title: "data_gdis"
+format: html
+---
+
+```{r load_pckg, include=FALSE, cache=FALSE}
+
+source(here::here('scripts', 'library.R'))
+```
+
+Data import
+
+```{r load_data}
+
+load(file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\source\\treatment\\gdis\\pend-gdis-1960-2018-disasterlocations.rdata")
+```
+
+```{r data_gdis}
+
+# load GDIS dataset
+data_gdis = GDIS_disasterlocations
+# recreate object with a recent coordinate reference system
+st_crs(data_gdis) <- sf::st_crs(data_gdis, value = "EPSG:4326")
+# add iso3c variable
+data_gdis <- data_gdis |> 
+  mutate(iso3c = countrycode(sourcevar = country,
+                    origin = "country.name",
+                    destination = "iso3c"
+  )) |> 
+  mutate(iso3c = case_when(
+    country=="Micronesia" ~ "FSM",
+    country=="Kosovo" ~ "XXK",
+    .default = iso3c
+  ))
+```
+
+```{r save}
+
+save(data_gdis,
+     file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\treatment\\data_gdis.RData")
+```
