@@ -222,6 +222,9 @@ data_clim <- data_clim |>
     percentile = factor(percentile, levels=c("p1", "p5", "p10", "p90", "p95", "p99"))
     )
 
+# modify labels
+labelled::var_label(data_clim$value) <- "(mean)"
+
 # summary
 summary(data_clim)
 ```
@@ -445,113 +448,36 @@ save(join_gdis_emdat, file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_da
 data_severity <- left_join(data_clim, join_gdis_emdat, 
           by = "geo_id",
           suffix = c('', '_dis'))
-```
-
-```{r check_obs}
 
 # CHECK: object should have the same number of obs. as data_prec
 length(unique((data_severity$geo_id)))
-length(unique((data_prec$geo_id)))
-
-# id in event data, missing in precipitation data
-anti_join(join_gdis_emdat, 
-          data_prec,
-          by = c('geo_id'))
-# NOTE: missing obs. due to missing country filter on event data (includes donors)
+length(unique((data_clim$geo_id)))
 ```
 
-```{r missing_data}
-
-# Missing data
-data_severity |> 
-  filter(is.na(dis_no))
-
-data_severity |> 
-  filter(is.na(dis_no)) |> 
-  distinct(country_gdis, iso3c)
-
-data_severity |> 
-  filter(is.na(dis_no)) |> 
-  distinct(iso3c, geo_id)
-
-```
+### f
 
 ```{r}
 
-## create disaster_year dummy
-data_severity <- data_severity |> 
-  mutate(year_dis_dummy = ifelse(year == year_dis, 'Flood', 'No Flood'))
+df <- data_severity |> 
+  mutate(dis_dummy = ifelse(year == year_dis, 1, 0),
+         dis_reltime = year - year_dis)
 
-```
+df |> 
+  filter(dis_reltime %in% c(-5:5)) |> 
+  tabyl(extreme, dis_reltime) |> 
+  cprop()
 
-```{r}
-
-# Boxplot
-data_severity |> 
-  ggplot(aes(x = year_dis_dummy, y = prec_value)) +
-  geom_boxplot(outliers = FALSE) +
-  facet_wrap(~prec, scales = 'free_y') +
-  theme_light() +
-  labs(y = 'Nb of days (sd) / total mm (max)')
-
-```
-
-```{r}
-
-## See if maximum precip values occur during 'flood' years
-
-data_pct <- subset(data_severity, 
-                   select = c(geo_id, year, year_dis_dummy, prec, prec_value)) |>
-  mutate(max = max(prec_value), .by = c('geo_id', 'prec')) |> 
-  mutate(rank = percent_rank(prec_value), .by = c('geo_id', 'prec')) |> 
-  mutate(
-    p50 = ifelse(rank >=.5, 1, 0),
-    p75 = ifelse(rank >=.75, 1, 0),
-    p90 = ifelse(rank >=.9, 1, 0)
-    )
-           
-# all
-rprop(xtabs(~ year_dis_dummy + p50, data_pct))
-rprop(xtabs(~ year_dis_dummy + p75, data_pct))
-rprop(xtabs(~ year_dis_dummy + p90, data_pct))
-
-# sd
-rprop(xtabs(~ year_dis_dummy + p50, data_pct |> filter(prec=='sd2'))) # p50
-rprop(xtabs(~ year_dis_dummy + p50, data_pct |> filter(prec=='sd4')))
-rprop(xtabs(~ year_dis_dummy + p90, data_pct |> filter(prec=='sd2'))) # p90
-rprop(xtabs(~ year_dis_dummy + p90, data_pct |> filter(prec=='sd4')))
-
-# max     
-rprop(xtabs(~ year_dis_dummy + p50, data_pct |> filter(prec=='max1'))) # p50
-rprop(xtabs(~ year_dis_dummy + p50, data_pct |> filter(prec=='max5')))
-rprop(xtabs(~ year_dis_dummy + p90, data_pct |> filter(prec=='max1'))) # p90
-rprop(xtabs(~ year_dis_dummy + p90, data_pct |> filter(prec=='max5')))
-
-## See in which year maximum values occured
-data_pct |> 
-  pivot_longer(
-    cols = p50:p90,
-    names_to = "pct",
-    values_to = "pct_dummy") |> 
-  summarize(n = sum(pct_dummy),
-            .by = c(year, prec, pct)) |> 
-  mutate(year = as.integer(year)) |> 
-  ggplot(aes(x = year, y = n, group=pct)) +
-  geom_line(aes(colour=pct)) + 
-  facet_wrap(~prec, scales = 'free_y', nrow = 2, ncol = 4) +
-  theme_light() +
-  labs(x = 'Year', y = 'Freq', title = 'Nb of geo_id w/ prec > pct')
-
-# NOTE: (i) cyclicality, (ii) picks in 2004/5 and in 2010
-# cf. El-Nino episodes en 2002-2003, 2004-2005, 2006-2007 et 2009-2010
-# source: https://meteofrance.com/comprendre-climat/monde/el-nino-et-la-nina
-
-rm(data_max)
-```
-
-```{r reg}
-
-## regression??
+df |> 
+  filter(dis_reltime %in% c(-5:5)) |> 
+  summarize(prop = sum(extreme)/length(extreme), .by = c(dis_reltime, indice)) |> 
+  ggplot(aes(x=factor(dis_reltime), y=prop)) +
+  geom_bar(stat = "identity") + 
+  scale_y_continuous(labels = scales::percent) +
+  facet_wrap(~indice) + 
+  gghighlight::gghighlight(dis_reltime==0, calculate_per_facet = TRUE) +
+  theme_light() + 
+  labs(x = "Relative time to GDIS disaster year",
+       y = "Share of 'extreme' years")
 
 ```
 

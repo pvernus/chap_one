@@ -21,6 +21,7 @@ pacman::p_load(
   tidyverse, # data cleaning and visualization
   visdat, # display missingness
   ggplot2,
+  gghighlight,
   pals,
   janitor,
   easystats, # easystats::install_suggested()
