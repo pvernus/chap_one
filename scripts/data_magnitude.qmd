@@ -445,7 +445,7 @@ save(join_gdis_emdat, file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_da
 
 ```{r data_severity}
 
-data_severity <- left_join(data_clim, join_gdis_emdat, 
+data_severity <- left_join(data_clim, join_gdis_emdat,
           by = "geo_id",
           suffix = c('', '_dis'))
 
@@ -454,7 +454,7 @@ length(unique((data_severity$geo_id)))
 length(unique((data_clim$geo_id)))
 ```
 
-### f
+### 
 
 ```{r}
 
