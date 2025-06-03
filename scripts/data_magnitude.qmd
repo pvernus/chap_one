@@ -281,7 +281,7 @@ summarize(data_clim,
 
 # Load datasets
 load(file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\treatment\\emdat\\data_emdat.RData") # EM-DAT
-load(file = file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\treatment\\data_gdis.RData") # GDIS
+load(file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\treatment\\data_gdis.RData") # GDIS
 ```
 
 ### EM-DAT
@@ -458,26 +458,96 @@ length(unique((data_clim$geo_id)))
 
 ```{r}
 
+# Create variables
 df <- data_severity |> 
   mutate(dis_dummy = ifelse(year == year_dis, 1, 0),
          dis_reltime = year - year_dis)
 
-df |> 
-  filter(dis_reltime %in% c(-5:5)) |> 
-  tabyl(extreme, dis_reltime) |> 
-  cprop()
+# Define the list of disaster types
+dis_type <- list("flood", "drought", "extreme temperature", "storm")
 
+# Share of 'extreme' years (value > threshold) 
 df |> 
   filter(dis_reltime %in% c(-5:5)) |> 
   summarize(prop = sum(extreme)/length(extreme), .by = c(dis_reltime, indice)) |> 
-  ggplot(aes(x=factor(dis_reltime), y=prop)) +
-  geom_bar(stat = "identity") + 
-  scale_y_continuous(labels = scales::percent) +
-  facet_wrap(~indice) + 
-  gghighlight::gghighlight(dis_reltime==0, calculate_per_facet = TRUE) +
-  theme_light() + 
+
+# define function
+plot_prop_extrem <- function(dis_type) {
+  
+  df %>%
+    filter(disaster_type_gdis == dis_type) %>%
+    filter(dis_reltime %in% c(-5:5)) %>%
+    group_by(dis_reltime, indice, percentile) %>%
+    summarize(prop = sum(extreme)/length(extreme), .groups = 'drop') %>%
+    ungroup() %>%
+    mutate(max = max(prop), .by = c(indice, percentile)) %>%
+    mutate(fill_color = case_when(
+      dis_reltime == 0 ~ 'grey30',
+      prop == max ~ 'red',
+      TRUE ~ 'grey'
+    )) %>%
+    mutate(percentile = factor(percentile, 
+                               levels = c('p1', 'p5', 'p10', 'p99', 'p95', 'p90'))) %>%
+  ggplot(aes(x = factor(dis_reltime), y = prop, fill = fill_color)) +
+  geom_bar(position = position_dodge(width = 1), stat = "identity") +
+  facet_wrap(indice ~ percentile, scales = "free", ncol = 3) +
+  scale_fill_manual(values = c("grey30" = "grey30", "red" = "red", "grey" = "grey"),
+                    name = "Legend",
+                    labels = c("Other", "Disaster year", "Maximum value")) +
+  theme_minimal() +
   labs(x = "Relative time to GDIS disaster year",
-       y = "Share of 'extreme' years")
+       y = "Share of extreme years")
+}
+
+lapply(dis_type, plot_prop_extrem)
+
+## average severity measure
+
+# define function
+plot_mean_value <- function(dis_type) {
+  
+  df %>%
+    filter(disaster_type_gdis == dis_type) %>%
+    filter(dis_reltime %in% c(-5:5)) %>%
+    group_by(dis_reltime, indice, percentile) %>%
+    summarize(value = mean(value, na.rm = TRUE), .groups = 'drop') %>%
+    ungroup() %>%
+    mutate(max = max(value), .by = c(indice, percentile)) %>%
+    mutate(fill_color = case_when(
+      dis_reltime == 0 ~ 'grey30',
+      value == max ~ 'red',
+      TRUE ~ 'grey'
+    )) %>%
+    mutate(percentile = factor(percentile, 
+                               levels = c('p1', 'p5', 'p10', 'p99', 'p95', 'p90'))) %>%
+  ggplot(aes(x = factor(dis_reltime), y = value, fill = fill_color)) +
+  geom_bar(position = position_dodge(width = 1), stat = "identity") +
+  facet_wrap(indice ~ percentile, scales = "free", ncol = 3) +
+  scale_fill_manual(values = c("grey30" = "grey30", "red" = "red", "grey" = "grey"),
+                    name = "Legend",
+                    labels = c("Other", "Disaster year", "Maximum value")) +
+  theme_minimal() +
+  labs(x = "Relative time to GDIS disaster year",
+       y = "Average number of days (severity measure)")
+}
+
+lapply(dis_type, plot_mean_value)
+
+# boxplot
+boxplot_value <- function(dis_type) {
+
+df |> 
+  filter(disaster_type_gdis ==  dis_type) |> 
+  select(geo_id, value, indice, percentile, dis_reltime) |> 
+  filter(dis_reltime %in% c(-5:5)) |> 
+  ggplot(aes(x=factor(dis_reltime), y=value)) +
+  geom_boxplot(outliers = F) +
+  facet_wrap(indice ~ percentile, scales = "free", ncol = 3) +
+  theme_minimal()
+  
+}
+
+lapply(dis_type, boxplot_value)
 
 ```
 
