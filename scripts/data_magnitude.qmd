@@ -217,9 +217,13 @@ data_clim <- data_clim |>
       percentile == "p1" | percentile == "p99" ~ 3.65,
       percentile == "p5" | percentile == "p95" ~ 18.25,
       percentile == "p10" | percentile == "p90" ~ 36.5),
-    extreme = ifelse(value >= threshold, 1, 0),
+    threshold_med = threshold * 1.5,
+    threshold_large = threshold * 2,
+    severe = ifelse(value >= threshold, 1, 0),
+    severe_med = ifelse(value >= threshold_med, 1, 0),
+    severe_large = ifelse(value >= threshold_large, 1, 0),
     year = as.double(year),
-    percentile = factor(percentile, levels=c("p1", "p5", "p10", "p90", "p95", "p99"))
+    percentile = factor(percentile, levels=c("p1", "p5", "p10", "p99", "p95", "p90"))
     )
 
 # modify labels
@@ -436,7 +440,7 @@ join_gdis_emdat |>
   filter(is.na(disasterno))
 ```
 
-```{r save}
+```{r save join_gdis_emdat}
 
 save(join_gdis_emdat, file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\treatment\\join_gdis_emdat.RData")
 ```
@@ -454,7 +458,12 @@ length(unique((data_severity$geo_id)))
 length(unique((data_clim$geo_id)))
 ```
 
-### 
+```{r save data_severity}
+
+save(data_severity, file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\treatment\\data_severity.RData")
+```
+
+### Relative time to disaster year
 
 ```{r}
 
@@ -471,6 +480,8 @@ df |>
   filter(dis_reltime %in% c(-5:5)) |> 
   summarize(prop = sum(extreme)/length(extreme), .by = c(dis_reltime, indice)) |> 
 
+## share of year w/ severity > expected average
+  
 # define function
 plot_prop_extrem <- function(dis_type) {
   
@@ -533,7 +544,8 @@ plot_mean_value <- function(dis_type) {
 
 lapply(dis_type, plot_mean_value)
 
-# boxplot
+## boxplot
+
 boxplot_value <- function(dis_type) {
 
 df |> 
@@ -558,7 +570,7 @@ lapply(dis_type, boxplot_value)
 ```{r data_landscan}
 
 # Define the folder path containing the .xlsx files
-folder_path <- here('source', 'treatment', 'landscan')
+folder_path <- "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\source\\treatment\\landscan"
 
 # List all files in the folder with the specified pattern
 files <- list.files(path = folder_path, pattern = 'landscan_flood_\\d{4}\\.xlsx', full.names = TRUE)
@@ -622,7 +634,7 @@ head(data_landscan_short)
 ```{r data_modis}
 
 # Define the folder path containing the .xlsx files
-folder_path <- here('source', 'treatment', 'modis')
+folder_path <- "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\source\\treatment\\modis"
 
 # List all files in the folder with the specified pattern
 files <- list.files(path = folder_path, pattern = '*.xlsx', full.names = TRUE)
@@ -654,14 +666,17 @@ data_modis <- files |>
 
 ```
 
+> **Land cover classification**
+
+Source: [link](https://modis-land.gsfc.nasa.gov/pdf/MCD12Q1_C6_Userguide04042018.pdf)
+
+- Croplands: 12
+
+- Cropland/Natural Vegetation Mosaics: 14
+
+- Urban and Built-up Lands: 13
+
 ```{r data_modis_short}
-
-## Land cover classification
-# see: https://modis-land.gsfc.nasa.gov/pdf/MCD12Q1_C6_Userguide04042018.pdf
-
-# Croplands: 12
-# Cropland/Natural Vegetation Mosaics: 14
-# Urban and Built-up Lands: 13
 
 data_modis_short <- data_modis |> 
   mutate(land_crop = c_12 + c_14,
@@ -735,24 +750,11 @@ data_exposure <- merge(data_landscan_short, data_modis_short,
 
 ```{r data_magnitude}
 
-# merge severity and exposure data
-data_magnitude <- merge(data_exposure, data_severity, 
-      by = c("geo_id", "disasterno", "year")) |> 
-  dplyr::select(geo_id, disasterno, iso3c, year, year_dis, classification_key,
-                starts_with("prec"),
-                starts_with("pop"),
-                starts_with("land"))
-
-data_magnitude |> 
-  group_by(prec) |> 
-  summary(prec_value)
-
-summarize(data_magnitude,
-  min = min(land_value),
-  max = max(land_value),
-  .by = land
-)
+data_magnitude <- 
+merge(data_severity, data_exposure, by = c("geo_id", "disasterno", "year"))
 ```
+
+
 
 ```{r distribution_value}
 
@@ -782,61 +784,6 @@ data_magnitude |>
   geom_density() +
   geom_vline(aes(xintercept = mean), linetype = "dashed", colour = "blue") +
   theme_light()
-```
-
-```{r data_rank}
-
-data_rank <- data_magnitude |>  
-# keep treated years only  
-  filter(year == year_dis) |> 
-# percentile rank severity and exposure vars
-  group_by(prec, pop, land) |>   
-  mutate(rank_prec = percent_rank(prec_value)) |> # severity
-  mutate(rank_pop = percent_rank(pop_value)) |>  # exposure (pop)
-  mutate(rank_land = percent_rank(land_value)) |> # exposure (land)
-  ungroup() |> 
-## create percentile rank dummies
-# exposure
-  mutate(
-    p50_pop_dummy = ifelse(rank_pop >= .5, 1, 0),
-    p4060_pop_dummy = ifelse(rank_pop >= .4 & rank_prec <= .6, 1, 0),
-    p90_pop_dummy = ifelse(rank_pop >= .9, 1, 0),
-    p99_pop_dummy = ifelse(rank_pop >= .99, 1, 0)      
-  ) |> 
-# severity
-  mutate(
-    p50_prec_dummy = ifelse(rank_prec >= .5, 1, 0),
-    p4060_prec_dummy = ifelse(rank_prec >= .4 & rank_prec <= .6, 1, 0),
-    p90_prec_dummy = ifelse(rank_prec >= .9, 1, 0),
-    p99_prec_dummy = ifelse(rank_prec >= .99, 1, 0)
-  )
-```
-
-```{r data_unit}
-
-data_unit <- data_rank |> 
-  expand(iso3c, year)
-```
-
-```{r data_sd2_pop}
-
-data_sd2_pop <- data_rank |> 
-  filter(prec=="sd2") |> # severity index
-  filter(pop=="pop_tma") |> # exposure index
-  dplyr::select(geo_id, iso3c, year, contains("prec_dummy"), contains("pop_dummy")) |> 
-  summarize(
-# exposure
-    D_pop_50 =  ifelse(sum(p50_pop_dummy) > 0, 1, 0),
-    D_pop_4060 = ifelse(sum(p4060_pop_dummy) > 0, 1, 0),
-    D_pop_90 =  ifelse(sum(p90_pop_dummy) > 0, 1, 0),
-    D_pop_99 = ifelse(sum(p99_pop_dummy) > 0, 1, 0),
-# severity
-    D_prec_50 = ifelse(sum(p50_prec_dummy) > 0, 1, 0),
-    D_prec_4060 = ifelse(sum(p4060_prec_dummy) > 0, 1, 0),
-    D_prec_90 = ifelse(sum(p90_prec_dummy) > 0, 1, 0),
-    D_prec_99 = ifelse(sum(p99_prec_dummy) > 0, 1, 0),
-    .by = c("iso3c", "year")) |> 
-  arrange(iso3c, year)
 ```
 
 ```{r treatment}
