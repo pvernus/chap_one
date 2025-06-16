@@ -20,6 +20,26 @@ source(here::here('scripts', 'library.R'))
 load(here("data", "data_magnitude.RData"))
 ```
 
+```{r}
+
+data_magnitude |>
+  filter(indice %in% c("rx1d", "rx90d", "tmax1d", "wmean1d")) |> 
+  filter(percentile %in% c("p5", "p95")) |> 
+  mutate(dis_dummy = ifelse(year_dis==year, 1, 0)) |> 
+  summarize(
+
+    n = sum(dis_dummy),
+    .by = c("iso3c", "year")
+  )
+
+join_gdis_emdat |> 
+  filter(!(disaster_type_gdis == "extreme temperature" & is.na(disaster_type_emdat))) |> 
+    summarize(
+    n = sum(dis_dummy),
+    .by = c("iso3c", "year")
+  )
+```
+
 ```{r treat.status_H}
 
 panelview(1 ~ , data = ,           

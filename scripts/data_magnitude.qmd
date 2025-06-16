@@ -311,25 +311,25 @@ data_clim <- do.call(rbind, list_clim)
 # create variables 
 data_clim <- data_clim |> 
   mutate(
-    threshold = case_when(
-      percentile == "p1" | percentile == "p99" ~ 3.65,
-      percentile == "p5" | percentile == "p95" ~ 18.25,
-      percentile == "p10" | percentile == "p90" ~ 36.5),
-    threshold_med = threshold * 1.5,
-    threshold_large = threshold * 2,
-    severe = ifelse(value >= threshold, 1, 0),
-    severe_med = ifelse(value >= threshold_med, 1, 0),
-    severe_large = ifelse(value >= threshold_large, 1, 0),
-    year = as.double(year),
-    percentile = factor(percentile, levels=c("p1", "p5", "p10", "p99", "p95", "p90"))
-    )
-
+    mean = mean(value),
+    sd = sd(value),
+    .by = c("geo_id", "indice", "percentile")
+  ) |> 
+  mutate( # define hazard severity as deviation from the historical mean (!= baseline mean < 2001)
+    severe = ifelse(value >= mean + sd, 1, 0),
+    severe_med = ifelse(value >= mean + sd * 1.5, 1, 0),
+    severe_large = ifelse(value >= mean + sd * 2, 1, 0)
+  ) |> 
+  mutate(year = as.double(year)) |> 
+  mutate(percentile = factor(percentile, levels=c("p1", "p5", "p10", "p99", "p95", "p90")))
+    
 # modify labels
 labelled::var_label(data_clim$value) <- "(mean)"
 
 # summary
 summary(data_clim)
 ```
+
 ```{r}
 # save
 save(data_wet, data_dry, data_hot, data_wind, data_clim,
@@ -346,12 +346,12 @@ summarize(data_clim,
   filter(year <= 2018) |> 
   ggplot(aes(x = year, y = mean_value)) +
   geom_line() +
-  geom_smooth(method=lm) +
+  geom_smooth(method=loess) +
   facet_wrap(~indice) +
   theme_light() +
   labs(
     x = "",
-    y = "Mean days > threshold"
+    y = "Average # of days > historical mean + sd"
   )
 
 # mean extreme
@@ -365,14 +365,14 @@ summarize(data_clim,
           .by = c(year, indice, percentile)) |> 
   filter(year <= 2018) |> 
   ggplot(aes(x = year, y = mean_extr, color = percentile)) +
-  geom_line() +
-  geom_smooth(method=lm, se = FALSE) +
+  geom_line(alpha = .3) +
+  geom_smooth(method=loess, se = FALSE) +
   scale_color_manual(values = color_palette) +
   facet_wrap(~indice) +
   theme_light() +
   labs(
     x = "",
-    y = "Proportion of extreme events (days > threshold)"
+    y = "Proportion of extreme events (days > historical mean + sd)"
   )
 
 ```
@@ -546,13 +546,17 @@ save(join_gdis_emdat, file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_da
 
 ```{r data_severity}
 
-data_severity <- left_join(data_clim, join_gdis_emdat,
+merged_df <- left_join(data_clim, join_gdis_emdat,
           by = "geo_id",
           suffix = c('', '_dis'))
 
-# CHECK: object should have the same number of obs. as data_prec
-length(unique((data_severity$geo_id)))
+# CHECK: object should have the same number of obs. as data_clim
+length(unique((merged_df$geo_id)))
 length(unique((data_clim$geo_id)))
+
+# N.B. emdat distinguishes between hot and cold extreme temperature events, but not gdis
+# remove *cold* extreme temperature events
+data_severity <- filter(merged_df, !(disaster_type_gdis == "extreme temperature" & is.na(disaster_type_emdat)))
 ```
 
 ```{r save data_severity}
@@ -686,6 +690,12 @@ df |>
 
 lapply(dis_type, boxplot_value)
 ```
+
+```{r}
+
+
+```
+
 
 # Hazard exposure (E)
 
@@ -878,8 +888,6 @@ data_magnitude <-
 merge(data_severity, data_exposure, by = c("geo_id", "disasterno", "year"))
 ```
 
-
-
 ```{r distribution_value}
 
 # Precipitation
@@ -912,8 +920,7 @@ data_magnitude |>
 
 ```{r treatment}
 
-treatment <- left_join(data_unit, data_sd2_pop, by = c("iso3c", "year")) |> 
-  mutate(across(starts_with("D_"), \(x) replace_na(x, 0)))
+treatment <- left_join(, , by = c("iso3c", "year")) |> 
 ```
 
 ```{r}
