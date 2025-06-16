@@ -263,7 +263,7 @@ color_palette <- c("p1" = "#E91300", "p99" = "#E91300",
                    "p10" = "#FFD17A", "p90" = "#FFD17A")
 # plot
 summarize(data_clim,
-          mean_extr = mean(extreme),
+          mean_extr = mean(severe),
           .by = c(year, indice, percentile)) |> 
   filter(year <= 2018) |> 
   ggplot(aes(x = year, y = mean_extr, color = percentile)) +
@@ -335,7 +335,6 @@ data_emdat_short <- data_emdat |>
 ```{r clean_gdis}
 
 ## GDIS
-data_gdis <- sf::st_set_geometry(GDIS_disasterlocations, NULL) # remove geometry
 data_gdis_short <- data_gdis |> 
   select(disasterno, dis_id = id, geo_id, disastertype, iso3, country) |> 
   mutate(year = as.numeric(substr(data_gdis$disasterno, 1, 4))) |> # time period

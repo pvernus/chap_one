@@ -18,7 +18,7 @@ load(file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\source\\treat
 ```{r data_gdis}
 
 # load GDIS dataset
-data_gdis = GDIS_disasterlocations
+data_gdis = sf::st_set_geometry(GDIS_disasterlocations, NULL) # remove geometry
 # recreate object with a recent coordinate reference system
 st_crs(data_gdis) <- sf::st_crs(data_gdis, value = "EPSG:4326")
 # add iso3c variable
@@ -36,6 +36,6 @@ data_gdis <- data_gdis |>
 
 ```{r save}
 
-save(data_gdis,
+save(data_gdis, GDIS_disasterlocations,
      file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\treatment\\data_gdis.RData")
 ```

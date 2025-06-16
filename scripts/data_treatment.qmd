@@ -20,112 +20,9 @@ source(here::here('scripts', 'library.R'))
 load(here("data", "data_magnitude.RData"))
 ```
 
-## Treatment types
-
-|          |               |           |               |
-|----------|---------------|-----------|---------------|
-|          |               | Severity  |               |
-|          |               | \< 90 pct | $\geq$ 90 pct |
-| Exposure | \< 90 pct     | LeLs      | LeHs          |
-|          | $\geq$ 90 pct | HeLs      | HeHs          |
-
-```{r sample_treatment}
-
-# Medium exposure ~ Medium severity 
-xtabs(~ D_pop_50 + D_prec_50, treatment)  
-# High exposure ~ Medium severity 
-xtabs(~ D_pop_90 + D_prec_50, treatment) 
-# Medium exposure ~ High severity 
-xtabs(~ D_pop_50 + D_prec_90, treatment)  
-# High exposure ~ High severity 
-xtabs(~ D_pop_90 + D_prec_90, treatment)
-```
-
-```{r}
-
-treatment |>    
-  summarize(across(c(D_pop_90, D_prec_90), ~ sum(.x, na.rm = T))) |>    
-  rowwise() |>    
-  mutate(total = sum(c(D_pop_90, D_prec_90), na.rm = T))  
-
-treatment |>    
-  summarize(across(c(D_pop_90, D_prec_90), ~ sum(.x, na.rm = T)),             
-            .by = year) |>    
-  rowwise(year) |>    
-  mutate(total = sum(c(D_pop_90, D_prec_90), na.rm = T))  
-
-treatment |>    
-  summarize(across(c(D_pop_90, D_prec_90), ~ sum(.x, na.rm = T)),             
-            .by = iso3c) |>    
-  rowwise(iso3c) |>    
-  mutate(total = sum(c(D_pop_90, D_prec_90), na.rm = T))
-```
-
-```{r treatment_iso}
-
-treatment_iso <- treatment |>    
-  mutate(
-    D_H = ifelse(D_pop_90 == 1 | D_prec_90 == 1, 1, 0),
-    D_He = ifelse(D_pop_90 == 1, 1, 0),
-    D_Hs = ifelse(D_prec_90 == 1, 1, 0),
-    D_HeLs = ifelse(D_pop_90 == 1 & D_prec_90 == 0, 1, 0),     
-    D_LeLs = ifelse(D_pop_90 == 0 & D_prec_90 == 0, 1, 0),     
-    D_HeHs = ifelse(D_pop_90 == 1 & D_prec_90 == 1, 1, 0),     
-    D_LeHs = ifelse(D_pop_90 == 0 & D_prec_90 == 1, 1, 0)     
-    ) |>    
-  mutate(     
-    D_multi = factor(case_when(         
-      D_pop_90 == 1 & D_prec_90 == 0 ~ "He_Ls",         
-      D_pop_90 == 1 & D_prec_90 == 1 ~ "He_Hs",         
-      D_pop_90 == 0 & D_prec_90 == 0 ~ "Le_Ls",         
-      D_pop_90 == 0 & D_prec_90 == 1 ~ "Le_Hs",         
-      .default = NA_character_     
-      ), levels = c("He_Ls", "He_Hs", "Le_Ls", "Le_Hs")),     
-    D_multi_int = as.integer(D_multi)     ) |>    
-  dplyr::select(-contains(c("pop", "prec")))
-
-```
-
-```{r}
-
-# Label new variables
-labelled::var_label(treatment_iso) <- list(
-  D_H = "High exposure or high severity extreme event (binary)",
-  D_He = "High exposure extreme event (binary)",
-  D_Hs = "High severity extreme event (binary)",
-  D_HeLs = "High exposure/low severity extreme event (binary)",
-  D_LeLs = "Low exposure/low severity extreme event (binary)",
-  D_HeHs = "High exposure/high severity extreme event (binary)",
-  D_LeHs = "Low exposure/high severity extreme event (binary)",
-  D_multi = "Disastrous extreme event type (categorical)",
-  D_multi_int = "Disastrous extreme event type (numeric)"
-)
-
-```
-
-```{r}
-
-treatment_iso |>    
-  summarize(across(D_HeLs:D_LeHs, ~ sum(.x, na.rm = T))) |>    
-  rowwise() |>    
-  mutate(total = sum(c_across(D_HeLs:D_LeHs), na.rm = T))  
-
-treatment_iso |>    
-  summarize(across(D_HeLs:D_LeHs, ~ sum(.x, na.rm = T)),             
-            .by = year) |>    
-  rowwise(year) |>    
-  mutate(total = sum(c_across(D_HeLs:D_LeHs), na.rm = T))  
-
-treatment_iso |>    
-  summarize(across(D_HeLs:D_LeHs, ~ sum(.x, na.rm = T)),             
-            .by = iso3c) |>    
-  rowwise(iso3c) |>    
-  mutate(total = sum(c_across(D_HeLs:D_LeHs), na.rm = T))
-```
-
 ```{r treat.status_H}
 
-panelview(1 ~ D_H, data = treatment_iso,           
+panelview(1 ~ , data = ,           
           index = c("iso3c","year"),      
           by.timing = TRUE,                   
           collapse.history = TRUE,
@@ -137,7 +34,7 @@ panelview(1 ~ D_H, data = treatment_iso,
 ```{r treat.status_type}
 
 # binary treatment status 
-variables <- c("D_HeLs", "D_HeHs", "D_LeLs", "D_LeHs") 
+variables <- c("", "", "", "") 
 
 panel.bin <- variables |>      
   map(~ panelview(as.formula(paste("1 ~", .x)),                   
@@ -149,9 +46,9 @@ panel.bin <- variables |>
 
 # multinomial treatment status 
 mycol<-c("#73AE80", "#2A5A5B", "#E8E8E8", "#6C83B5") 
-panelview(1 ~ D_multi_int, data = treatment_iso,           
+panelview(1 ~ , data = ,           
           index = c("iso3c","year"),           
-          legend.labs = c("He_Ls", "He_Hs", "Le_Ls", "Le_Hs"),           
+          legend.labs = c("", "", "", ""),           
           color = mycol, background = "white"           
           ) 
 
@@ -229,21 +126,8 @@ treatment_iso_first <- subset(treatment_iso_first, select = -c(D_H:D_multi_int))
 ```{r}
 
 # Label new variables
-labelled::var_label(treatment_iso_first) <- list(
-  cohort_D_H = "First treatment year, high exposure or high severity event",
-  cohort_D_He = "First treatment year, high exposure event",
-  cohort_D_Hs = "First treatment year, high severity event",
-  cohort_D_HeLs = "First treatment year, high exposure / low severity event",
-  cohort_D_LeLs = "First treatment year, low exposure / low severity event",
-  cohort_D_HeHs = "First treatment year, high exposure / high severity event",
-  cohort_D_LeHs = "First treatment year, low exposure / high severity event",
-  D_H_first = "First high exposure / high severity extreme event (binary)",
-  D_He_first = "First high exposure extreme event (binary)",
-  D_Hs_first = "First high severity extreme event (binary)",
-  D_HeLs_first = "First high exposure / low severity extreme event (binary)",
-  D_LeLs_first = "First low exposure / low severity extreme event (binary)",
-  D_HeHs_first = "First high exposure / high severity extreme event (binary)",
-  D_LeHs_first = "First low exposure / high severity extreme event (binary)"
+labelled::var_label() <- list(
+   = "",
 )
 
 ```
@@ -251,43 +135,13 @@ labelled::var_label(treatment_iso_first) <- list(
 ```{r}
 
 # Binary staggered 'first' high exposure|severity treatment
-panelview(1 ~ D_H_first,                   
-            main = "Staggered 'first' high exposure|severity treatment",                   
+panelview(1 ~ ,                   
+            main = "t",                   
             by.timing = TRUE,                   
             collapse.history = TRUE,
             pre.post = TRUE,
-            data = treatment_iso_first,                   
+            data = ,                   
             index = c("iso3c", "year"))
-
-# Binary staggered 'first' high exposure
-panelview(1 ~ D_He_first,                   
-            main = "Staggered 'first' high exposure treatment",                   
-            by.timing = TRUE,                   
-            collapse.history = TRUE,
-            pre.post = TRUE,
-            data = treatment_iso_first,                   
-            index = c("iso3c", "year"))
-
-# Binary staggered 'first' high severity treatment
-panelview(1 ~ D_Hs_first,                   
-            main = "Staggered 'first' high severity treatment",                   
-            by.timing = TRUE,                   
-            collapse.history = TRUE,
-            pre.post = TRUE,
-            data = treatment_iso_first,                   
-            index = c("iso3c", "year"))
-
-# binary staggered 'first treatment' treatment status 
-treat.vars.first <- c("D_HeLs_first", "D_HeHs_first", "D_LeLs_first", "D_LeHs_first") 
-
-panel.bin <- treat.vars.first |>      
-  map(~ panelview(as.formula(paste("1 ~", .x)),                   
-                  main = paste("Panel View:", .x),                   
-                  by.timing = TRUE,                   
-                  collapse.history = TRUE,
-                  pre.post = TRUE,
-                  data = treatment_iso_first,                   
-                  index = c("iso3c", "year")))
 
 ```
 
@@ -323,50 +177,6 @@ treatment_iso_first_rel <- purrr::reduce(cohort.vars, function(data, x) {
 
 # Keep new variables only
 treatment_iso_first_rel <- subset(treatment_iso_first_rel, select = -c(cohort_D_H:D_LeHs_first))
-
-```
-
-```{r}
-
-# Label new variables
-labelled::var_label(treatment_iso_first_rel) <- list(
-  # ever treated
-  D_H_ever_treated = "",
-  D_HeLs_ever_treated = "",
-  D_LeLs_ever_treated = "",
-  D_HeHs_ever_treated = "",
-  D_LeHs_ever_treated = "",
-  # relative time since first treatment
-  D_H_rel_time = "",
-  D_HeLs_rel_time = "",
-  D_LeLs_rel_time = "",
-  D_HeHs_rel_time = "",
-  D_LeHs_rel_time = "",
-  # first treatment <= 3 years
-  D_H_first_03 = "",
-  D_HeLs_first_03 = "",
-  D_LeLs_first_03 = "",
-  D_HeHs_first_03 = "",
-  D_LeHs_first_03 = "",
-  # first treatment %in% 4-5 years
-  D_H_first_45 = "",
-  D_HeLs_first_45 = "",
-  D_LeLs_first_45 = "",
-  D_HeHs_first_45 = "",
-  D_LeHs_first_45 = "",
-  # first treatment < 5 year
-  D_H_first_l6 = "",
-  D_H_first_l6 = "",
-  D_LeLs_first_l6 = "",
-  D_HeHs_first_l6 = "",
-  D_LeHs_first_l6 = "",
-  # first treatment > 5 years
-  D_H_first_f6 = "",
-  D_HeLs_first_f6 = "",
-  D_LeLs_first_f6 = "",
-  D_HeHs_first_f6 = "",
-  D_LeHs_first_f6 = ""
-)
 
 ```
 
