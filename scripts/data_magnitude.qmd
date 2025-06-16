@@ -18,6 +18,55 @@ source(here::here('scripts', 'library.R'))
 ```{r import_wet}
 
 # define the directory
+data_path <- "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\source\\treatment\\era5\\rainfall\\wet"
+
+# define the file pattern
+files <- list.files(data_path, full.names = TRUE)
+
+# import and arrange dta files
+data_list <- lapply(files, function(file) {
+  # read file
+  data <- haven::read_dta(file)
+  file_name <- basename(file)
+  # rename variable
+  names(data) <- ifelse(grepl("^p", names(data)), "value", names(data))
+   # create indice variable
+  if (grepl("rx1d", file_name)) {
+    data$indice <- "rx1d"
+  } else if (grepl("rx5d", file_name)) {
+    data$indice <- "rx5d"
+  }
+  # create percentile variable
+  if (grepl("p90", file_name)) {
+    data$percentile <- "p90"
+  } else if (grepl("p95", file_name)) {
+    data$percentile <- "p95"
+  } else if (grepl("p99", file_name)) {
+    data$percentile <- "p99"
+  }
+  
+  return(data)
+})
+
+# rename list objects
+names(data_list) <- sapply(basename(files), function(x) {
+  x <- sub("^geo_id_", "", x)
+  sub("\\.dta$", "", x)
+})
+
+# combine list elements
+data_wet <- do.call(rbind, data_list)
+
+## remove useless objects
+rm(data_list)
+```
+
+Alternative dataset:
+
+```{r import_wet_mswep}
+#| eval: false # Don't evaluate this chunk
+
+# define the directory
 data_path <- "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\source\\treatment\\mswep\\wet"
 
 # define the file pattern
@@ -64,6 +113,55 @@ rm(data_list)
 ### Dry
 
 ```{r import_dry}
+
+# define the directory
+data_path <- "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\source\\treatment\\era5\\rainfall\\dry"
+
+# define the file pattern
+files <- list.files(data_path, full.names = TRUE)
+
+# import and arrange dta files
+data_list <- lapply(files, function(file) {
+  # read file
+  data <- haven::read_dta(file)
+  file_name <- basename(file)
+  # rename variable
+  names(data) <- ifelse(grepl("^p", names(data)), "value", names(data))  
+   # create indice variable
+  if (grepl("rx90d", file_name)) {
+    data$indice <- "rx90d"
+  } else if (grepl("rx180d", file_name)) {
+    data$indice <- "rx180d"
+  }
+  # create percentile variable
+  if (grepl("p10", file_name)) {
+    data$percentile <- "p10"
+  } else if (grepl("p5", file_name)) {
+    data$percentile <- "p5"
+  } else if (grepl("p1", file_name)) {
+    data$percentile <- "p1"
+  }
+
+  return(data)
+})
+
+# rename list objects
+names(data_list) <- sapply(basename(files), function(x) {
+  x <- sub("^geo_id_", "", x)
+  sub("\\.dta$", "", x)
+})
+
+# combine list elements
+data_dry <- do.call(rbind, data_list)
+
+## remove useless objects
+rm(data_list)
+```
+
+Alternative dataset:
+
+```{r import_dry_mswep}
+#| eval: false # Don't evaluate this chunk
 
 # define the directory
 data_path <- "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\source\\treatment\\mswep\\dry"
@@ -470,25 +568,47 @@ save(data_severity, file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data
 df <- data_severity |> 
   mutate(dis_dummy = ifelse(year == year_dis, 1, 0),
          dis_reltime = year - year_dis)
+```
+
+```{r}
 
 # Define the list of disaster types
 dis_type <- list("flood", "drought", "extreme temperature", "storm")
+```
+
+```{r}
 
 # Share of 'extreme' years (value > threshold) 
 df |> 
   filter(dis_reltime %in% c(-5:5)) |> 
-  summarize(prop = sum(extreme)/length(extreme), .by = c(dis_reltime, indice)) |> 
+  summarize(small = sum(severe)/length(severe), 
+            medium = sum(severe_med)/length(severe_med),
+            large = sum(severe_large)/length(severe_large),
+            .by = c(dis_reltime, indice)
+            ) |> 
+  pivot_longer(cols = c("small", "medium", "large"), 
+               names_to = "severe", values_to = "value") |> 
+  mutate(severe = factor(severe, levels = c("small", "medium", "large"))) |> 
+  ggplot(aes(x = factor(dis_reltime), y = value)) +
+  geom_bar(stat = "identity") +
+  gghighlight(dis_reltime==0, calculate_per_facet = T) +
+  facet_wrap(~severe, scales="free_y") +
+  theme_light()
+  
+```
+
+```{r}
 
 ## share of year w/ severity > expected average
   
 # define function
-plot_prop_extrem <- function(dis_type) {
+plot_prop_severe <- function(dis_type) {
   
   df %>%
     filter(disaster_type_gdis == dis_type) %>%
     filter(dis_reltime %in% c(-5:5)) %>%
     group_by(dis_reltime, indice, percentile) %>%
-    summarize(prop = sum(extreme)/length(extreme), .groups = 'drop') %>%
+    summarize(prop = sum(severe)/length(severe), .groups = 'drop') %>%
     ungroup() %>%
     mutate(max = max(prop), .by = c(indice, percentile)) %>%
     mutate(fill_color = case_when(
@@ -509,7 +629,10 @@ plot_prop_extrem <- function(dis_type) {
        y = "Share of extreme years")
 }
 
-lapply(dis_type, plot_prop_extrem)
+lapply(dis_type, plot_prop_severe)
+```
+
+```{r}
 
 ## average severity measure
 
@@ -543,6 +666,9 @@ plot_mean_value <- function(dis_type) {
 
 lapply(dis_type, plot_mean_value)
 
+```
+
+```{r}
 ## boxplot
 
 boxplot_value <- function(dis_type) {
@@ -559,7 +685,6 @@ df |>
 }
 
 lapply(dis_type, boxplot_value)
-
 ```
 
 # Hazard exposure (E)
