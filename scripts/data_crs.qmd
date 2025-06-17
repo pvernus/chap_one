@@ -40,7 +40,7 @@ data_import <- data.table::rbindlist(data_list, fill = T)
 
 data_select <- data_import |> 
 # select variables
-    dplyr::select(1:26, 39, 44:54, 57:59, 62:67, 74:77, 78) |>
+    dplyr::select(1:6, 8:26, 44, 45, 59, 46:49, 50:53, 74:77) |>
 # delete white space before/after text
     mutate_if(is.character, str_trim)
 ```
@@ -143,12 +143,30 @@ summarize(df,
 df <- filter(df, !grepl('unspecified|regional', recipient_name))
 ```
 
+- Add ISO3-C codes to recipient countries.
+
+```{r}
+
+df <- df |> 
+  mutate(iso3c = countrycode(sourcevar = recipient_name,
+                             origin = 'country.name.en',
+                             destination = 'iso3c'
+  )) |> 
+  mutate(iso3c = case_when(
+    recipient_name == "Kosovo" ~ "XKX",
+    recipient_name == "Micronesia" ~ "FSM",
+    .default = iso3c
+  )) |> 
+  relocate(iso3c, .after = recipient_name)
+```
+
 ## Duplicates
 
 Duplicates are removed.
 
 ```{r dupes}
 data_clean <- unique(df)
+rm(df)
 ```
 
 # Data transformation
@@ -200,7 +218,7 @@ df[, channel_code_unique := fifelse(
 
 # Relocate channel_code_unique after channel_parent_code
 data_channel = df |> relocate(channel_code_unique, .after = channel_parent_code)
-
+rm(df)
 ```
 
 I also create a variable `channel_level` to specify the level of the most disaggregated channel available.
@@ -228,7 +246,8 @@ df |>
   gt()
 
 # Update data_channel
-channel_level <- copy(df)
+data_channel_level <- copy(df)
+rm(df)
 ```
 
 ### Time consistency
@@ -259,17 +278,20 @@ delivery_crs_code <- read_xlsx(
          channel_name_2024 = full_name_english)
 
 # copy
-df <- channel_level
+df <- copy(data_channel_level)
 
 # merge w/ data set
-data_channel_code <- left_join(df, delivery_crs_code,
+df <- left_join(df, delivery_crs_code,
                            by = c('channel_code_unique' = 'channel_code_2024')) |>
   relocate(channel_parent_code_2024, .after = channel_parent_code) |> 
   relocate(channel_name_2024, .after = channel_name)
 
+data_channel_code <- df
+rm(df)
+
 # Sample
 data_channel_code |> 
-  dplyr::select(channel_name, channel_name_2024, 
+  dplyr::select(channel_name, channel_name_2024,
                 channel_parent_code, channel_parent_code_2024) |> 
   slice_sample(n = 10) |> 
   gt()
@@ -290,10 +312,10 @@ channel_nonstate = c(20000:63000)
 # channel_other = 90000
 
 # copy
-df <- data_channel_code
+df <- copy(data_channel_code)
 
 # create variable
-data_channel <- df |> 
+df <- df |> 
   mutate(
     channel_state = fct(case_when(
       channel_parent_code_2024 %in% channel_state ~"State",
@@ -302,6 +324,8 @@ data_channel <- df |>
     ))) |> 
   relocate(channel_state, .after = channel_name_2024)
 
+data_channel_state <- df
+rm(df)
 ```
 
 > To do (1): create multinomial channel variable.
@@ -320,7 +344,7 @@ pooled = c('B03', 'B031', 'B032', 'B033', 'B04')
 project = c('C01', 'D02')
 
 # copy
-df <- data_channel
+df <- copy(data_channel)
 
 # create variable
 data_mod <- df |> 
@@ -333,6 +357,8 @@ data_mod <- df |>
     .default = "Other"
   ))) |> 
   relocate(flow_modality, .after = aid_t)
+
+rm(df)
 ```
 
 ## Sectors
@@ -352,7 +378,7 @@ development = c(11110:60063)
   debt = c(60010:60063)
 
 # copy
-df <- data_mod
+df <- copy(data_mod)
   
 # create variables
 data_sector <- df |> 
@@ -369,14 +395,16 @@ data_sector <- df |>
       purpose_code %in% debt ~ "Debt relief",
       ))) |> 
   relocate(sector_hum:sector_multi, .after = aid_t)
+
+rm(df)
 ```
 
 ## Save
 
-```{r}
+```{r data_crs}
 
 # copy
-data_crs <- data_sector
+data_crs <- copy(data_sector)
 
 # save
 save(data_crs, delivery_crs_code,
@@ -385,3 +413,15 @@ save(data_crs, delivery_crs_code,
 # remove
 rm(list = ls())
 ```
+
+```{r data_iso3c}
+
+# list recipient iso3c
+data_iso3c <- data_crs |> select(country = recipient_name, iso3c) |> unique() |> arrange(country)
+
+# save
+save(data_iso3c,
+     file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\outcome\\data_iso3c.RData")
+
+```
+
