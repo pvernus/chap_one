@@ -330,6 +330,8 @@ labelled::var_label(data_clim$value) <- "(mean)"
 summary(data_clim)
 ```
 
+#### Save
+
 ```{r}
 # save
 save(data_wet, data_dry, data_hot, data_wind, data_clim,
@@ -424,8 +426,8 @@ data_emdat_short <- data_emdat |>
 # dis_no == "2010-0579-SDN": entry_date==2011; country=="Sudan") / 
 # dis_no == "2010-0579-SSD": entry_date==2016; country=="South Sudan"
 # I keep the observation which follows the rule set above  
-  filter(dis_no != "2010-0579-SSD")
-
+  filter(dis_no != "2010-0579-SSD") |> 
+  relocate(iso3c, .after = country)
 ```
 
 ### GDIS
@@ -457,8 +459,20 @@ data_gdis_short <- data_gdis |>
 # NOTE: UKR/Crimea:
 # disasterno=='2002-0482': three obs. in GDIS incl. one in Crimea/UKR (geo_id==22653) != RUS in EMDAT
 # For now, I remove the UKR obs. geo_id
-  filter(geo_id != 22653)
+  filter(geo_id != 22653) |> 
+  relocate(iso3c, .after = country)
+```
 
+Only keep OECD CRS recipient countries
+
+```{r}
+
+# load list recipient iso3c
+load(file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\outcome\\data_iso3c.RData")
+
+# filter out iso3c not included in OECD CRS data
+data_emdat_short <- data_emdat_short[data_emdat_short$iso3c %in% data_iso3c$iso3c, ]
+data_gdis_short <- data_gdis_short[data_gdis_short$iso3c %in% data_iso3c$iso3c, ]
 ```
 
 ```{r compare_data}
@@ -471,13 +485,13 @@ length(unique(data_emdat_short$disasterno))
 anti_join(distinct(data_gdis_short, disasterno, disastertype),
           distinct(data_emdat_short, disasterno),
           by = "disasterno")
-# NOTE: 163 events in GDIS w/out a match in EMDAT
+# NOTE: 125 events in GDIS w/out a match in EMDAT
 
 ## events in emdat, missing in gdis
 anti_join(distinct(data_emdat_short, disasterno, disaster_type),
           distinct(data_gdis_short, disasterno),
           by = "disasterno")
-# NOTE: 246 events in EMDAT w/out a match in GDIS
+# NOTE: 182 events in EMDAT w/out a match in GDIS
 
 # Not sure why.
 # Some events missing in EMDAT are due to *cold* extreme temperature events. GDIS does not differentiate between hot and cold extreme temperature.
@@ -525,17 +539,20 @@ join_gdis_emdat <- left_join(gdis, emdat,
 # difference in disaster type classification
 join_gdis_emdat |> 
   filter(disaster_type_gdis != disaster_type_emdat)
-# NOTE: not an issue. Only one event in Italy (Storm/Flood)
+# NOTE: not an issue.
 
 # difference in year
 join_gdis_emdat |> 
   filter(year < start_year | year > end_year)
-# NOTE: five events where different specified year between EMDAT and GDIS. For all of them, GDIS event starts one year before same EMDAT event.
+# NOTE: some events have different specified year between EMDAT and GDIS. For all of them, GDIS event starts one year before same EMDAT event.
 
 # Missing data
 join_gdis_emdat |> 
   filter(is.na(disasterno))
+# NOTE: not an issue.
 ```
+
+#### Save
 
 ```{r save join_gdis_emdat}
 
@@ -545,6 +562,20 @@ save(join_gdis_emdat, file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_da
 ## Merge weather-disaster events
 
 ```{r data_severity}
+
+length(unique(data_clim$geo_id))
+length(unique(join_gdis_emdat$geo_id))
+
+setdiff(data_clim$geo_id, join_gdis_emdat$geo_id)
+data_gdis |> 
+  filter(geo_id %in% setdiff(data_clim$geo_id, join_gdis_emdat$geo_id))
+# NOTE: geo_id in data_clim but missing in join_gdis_emdat are located in (i) Slovenia (not included in OECD CRS iso3c) and (ii) Ukraine (location in Crimea, that GDIS and EM-DAT code either in Ukraine or in Russia, so I removed it from the sample, see above).
+
+setdiff(join_gdis_emdat$geo_id, data_clim$geo_id)
+data_gdis |> 
+  filter(geo_id %in% setdiff(join_gdis_emdat$geo_id, data_clim$geo_id)) |> 
+  select(country, iso3c, geo_id, disasterno, disastertype) |> 
+  slice_sample(n = 10)
 
 merged_df <- left_join(data_clim, join_gdis_emdat,
           by = "geo_id",
@@ -558,6 +589,8 @@ length(unique((data_clim$geo_id)))
 # remove *cold* extreme temperature events
 data_severity <- filter(merged_df, !(disaster_type_gdis == "extreme temperature" & is.na(disaster_type_emdat)))
 ```
+
+#### Save
 
 ```{r save data_severity}
 
@@ -922,6 +955,8 @@ data_magnitude |>
 
 treatment <- left_join(, , by = c("iso3c", "year")) |> 
 ```
+
+#### Save
 
 ```{r}
 

@@ -4,10 +4,6 @@ format: html
 editor: visual
 ---
 
-TO DO:
-
-Compare Total events in GDIS/Emdat vs. High severity events
-
 # Treatment
 
 ```{r load_pckg}
@@ -15,188 +11,222 @@ Compare Total events in GDIS/Emdat vs. High severity events
 source(here::here('scripts', 'library.R'))
 ```
 
-```{r}
+```{r load.data_magnitude}
 
 load(here("data", "data_magnitude.RData"))
 ```
 
-```{r}
+## Sample
 
-data_magnitude |>
-  filter(indice %in% c("rx1d", "rx90d", "tmax1d", "wmean1d")) |> 
-  filter(percentile %in% c("p5", "p95")) |> 
-  mutate(dis_dummy = ifelse(year_dis==year, 1, 0)) |> 
+```{r data_treat}
+
+# select baseline indices and percentile
+indice_base <- c("rx1d", "rx90d", "tmax1d", "wmean1d")
+percentile_base <- c("p5", "p95")
+year_base <- 2001:2018
+
+df <- data_magnitude |>
+# filter indice and percentile  
+  filter(indice %in% indice_base) |> 
+  filter(percentile %in% percentile_base) |> 
+# filter year
+  filter(year %in% year_base) |> 
+# filter disaster year only
+  filter(year==year_dis)
+
+# aggregate at country-year level
+data_dis <- df |> 
   summarize(
-
-    n = sum(dis_dummy),
+    freq_dis = length(unique(disasterno)),
+    freq_adm = length(unique(geo_id)),
+    freq_adm_large = sum(severe_large),
+    value_avg = mean(value),
+    value_large = mean(value[severe_large == 1], na.rm = TRUE),
     .by = c("iso3c", "year")
-  )
+  ) |> 
+  replace_na(list(value_large = 0))
 
-join_gdis_emdat |> 
-  filter(!(disaster_type_gdis == "extreme temperature" & is.na(disaster_type_emdat))) |> 
-    summarize(
-    n = sum(dis_dummy),
-    .by = c("iso3c", "year")
+# load list recipient iso3c
+load(file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\outcome\\data_iso3c.RData")
+
+# define unit and time sample
+data_unit <- data_iso3c |> 
+  expand(iso3c, year_base) |> 
+  rename(year = year_base)
+
+# merge treatment vars to sample
+data_treat <- left_join(data_unit, data_dis, by = c("iso3c", "year")) |> 
+  mutate_all(replace_na, 0) |> 
+  mutate(
+    dis_dummy = ifelse(freq_dis>0, 1, 0),
+    dis_large_dummy = ifelse(freq_adm_large>0, 1, 0)
   )
 ```
 
-```{r treat.status_H}
+```{r data_treat_fast.slow}
 
-panelview(1 ~ , data = ,           
-          index = c("iso3c","year"),      
+fast_onset <- c("flood", "storm")
+slow_onset <- c("drought", "extreme temperature")
+
+# fast-onset
+df_fast <- filter(df, disaster_type_gdis %in% fast_onset)
+# slow-onset
+df_slow <- filter(df, disaster_type_gdis %in% slow_onset)
+
+# Define the processing function
+process_data <- function(df) {
+  df |>
+    summarize(
+      freq_dis = length(unique(disasterno)),
+      freq_adm = length(unique(geo_id)),
+      freq_adm_large = sum(severe_large),
+      value_avg = mean(value),
+      value_large = mean(value[severe_large == 1], na.rm = TRUE),
+      .by = c("iso3c", "year")
+    ) |>
+    replace_na(list(value_large = 0))
+}
+
+# List of dataframes
+df_list <- list(df_fast = df_fast, df_slow = df_slow)
+
+# Process each dataframe using purrr::map
+data_treat_list <- map(df_list, ~ {
+  data_dis <- process_data(.x)
+  left_join(data_unit, data_dis, by = c("iso3c", "year")) |>
+    mutate_all(replace_na, 0) |>
+    mutate(
+      dis_dummy = ifelse(freq_dis > 0, 1, 0),
+      dis_large_dummy = ifelse(freq_adm_large > 0, 1, 0)
+    )
+})
+
+# Retrieve results
+data_treat_fast <- data_treat_list$df_fast
+data_treat_slow <- data_treat_list$df_slow
+
+```
+
+## Treatment paths
+
+```{r treat.status}
+
+panelview(1 ~ dis_dummy, data = data_treat,           
+          index = c("iso3c","year"),
+          axis.lab = "time",
           by.timing = TRUE,                   
-          collapse.history = TRUE,
-          background = "white"           
+          background = "white",
+          main = "Treatment Status: All events"
           )
 
-```
+panelview(1 ~ dis_large_dummy, data = data_treat,           
+          index = c("iso3c","year"),
+          axis.lab = "time",
+          by.timing = TRUE,                   
+          background = "white",
+          main = "Treatment Status: Large events only"
+          )
 
-```{r treat.status_type}
-
-# binary treatment status 
-variables <- c("", "", "", "") 
-
-panel.bin <- variables |>      
-  map(~ panelview(as.formula(paste("1 ~", .x)),                   
-                  main = paste("Panel View:", .x),                   
-                  by.timing = TRUE,                   
-                  collapse.history = TRUE,
-                  data = treatment_iso,                   
-                  index = c("iso3c", "year")))   
-
-# multinomial treatment status 
-mycol<-c("#73AE80", "#2A5A5B", "#E8E8E8", "#6C83B5") 
-panelview(1 ~ , data = ,           
-          index = c("iso3c","year"),           
-          legend.labs = c("", "", "", ""),           
-          color = mycol, background = "white"           
-          ) 
-
+# NOTE: non-absorbing and multiple (with switching on/off) treatment
 ```
 
 ```{r treat.freq}
 
-## Frequency by year  
-treatment_iso |>    
-  mutate(year=factor(year),          
-         D_multi=fct_relevel(D_multi, "He_Ls", after = 1)) |>    
-  filter(D_multi != "Le_Ls") |>    
-  ggplot(aes(x=year, fill = D_multi)) +   
-  geom_bar() +   
-  scale_fill_manual(values = mycol[c(2,1,4)]) +   
-  labs(y = "Frequency", fill = "Event type") +   
-  theme_light()  
+## Proportions by year 
+summarize(data_treat, 
+          treat = mean(dis_dummy),
+          no_treat = 1 - mean(dis_dummy),
+            .by = year) |> 
+  pivot_longer(cols = c(treat, no_treat),
+               names_to = "status", values_to = "proportion") |> 
+  ggplot(aes(x = factor(year), y = proportion, fill = status)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = round(proportion, 2)), 
+            position = position_stack(vjust = 0.5), 
+            size = 3) +
+  labs(title = "",
+       x = "Year",
+       y = "%",
+       fill = "Status") +
+  theme_minimal()
 
-## Frequency by country  
-# Calculate the total frequency of each iso3c 
-# Pull ordered list of countries 
-frequency_order <- treatment_iso |>   
-  filter(D_multi != "Le_Ls") |>   
-  count(iso3c, sort = TRUE) |>   
-  pull(iso3c)  
+# NOTE: declining proportions of treated countries in the last periods. Maybe due to reporting bias.
 
-# Plot with x-axis ordered by total frequency 
-treatment_iso |>   
-  mutate(year = factor(year),          
-         D_multi = fct_relevel(D_multi, "He_Ls", after = 1)) |>   
-  filter(D_multi != "Le_Ls") |>   
-  # Reorder iso3c by frequency
-  mutate(iso3c = fct_rev(factor(iso3c, levels = frequency_order))) |>  
-  ggplot(aes(x = iso3c, fill = D_multi)) +   
-  geom_bar() +   
-  scale_fill_manual(values = mycol[c(2, 1, 4)]) +   
-  labs(x = "Country", y = "Frequency", fill = "Event type") +   
-  coord_flip() +   
-  theme_light()
-# Facet by region?
+## Proportions by country 
+summarize(data_treat, 
+          prop_treat = mean(dis_dummy),
+          prop_no_treat = 1 - mean(dis_dummy),
+            .by = iso3c)
 ```
 
-## Treatment assignments
+## Treatment assignment
 
-Currently, non-absorbing staggered multiple treatments (on-and-off / scenarios).
+Non-absorbing, staggered, multiple treatments (on-and-off).
 
 ### First-treatment staggered
 
-```{r}
+```{r data_cohort}
 
-treat.vars <- c("D_H", "D_He", "D_Hs", "D_HeLs", "D_LeLs", "D_HeHs", "D_LeHs")
-
-treatment_iso_first <- treatment_iso |> 
-  mutate(across(all_of(treat.vars),
-      ~ ifelse(sum(.x) > 0, min(year[.x == 1]), 9999),
-      .names = "cohort_{.col}"),
+# create cohort variable
+data_cohort <- data_treat |> 
+  mutate(
+    cohort_dis = ifelse(sum(dis_dummy) > 0, min(year[dis_dummy == 1]), 9999),
+    cohort_dis_large = ifelse(sum(dis_large_dummy) > 0, min(year[dis_large_dummy == 1]), 9999),
       .by = iso3c
     )
 
-cohort.vars <- c("cohort_D_H", "cohort_D_He", "cohort_D_Hs", "cohort_D_HeLs", "cohort_D_LeLs", "cohort_D_HeHs", "cohort_D_LeHs")
+## frequency by cohort years
+# all events
+summarize(data_cohort,
+          freq_country = length(unique(iso3c)),
+          .by = cohort_dis) |> 
+  arrange(cohort_dis)
 
-treatment_iso_first <- cohort.vars |> 
-  purrr::reduce(~ {
-    new_var <- paste0(sub("cohort_", "", .y), "_first")
-    .x[[new_var]] <- 0
-    .x[[new_var]][.x[[.y]] <= .x$year] <- 1
-    .x
-  }, .init = treatment_iso_first)
+# large events
+summarize(data_cohort,
+          freq_country = length(unique(iso3c)),
+          .by = cohort_dis_large
+          ) |> 
+  arrange(cohort_dis_large)
 
-# Keep new variables only
-treatment_iso_first <- subset(treatment_iso_first, select = -c(D_H:D_multi_int))
-
+# create dummy vars first-treatment
+data_first <- data_cohort |> 
+  mutate(
+    treat_first = ifelse(year == cohort_dis, 1, 0),
+    treat_first_stag = ifelse(year >= cohort_dis, 1, 0),
+    treat_large_first = ifelse(year == cohort_dis_large, 1, 0),
+    treat_large_first_stag = ifelse(year >= cohort_dis_large, 1, 0)
+  )
 ```
 
-```{r}
+```{r label_vars}
 
 # Label new variables
-labelled::var_label() <- list(
-   = "",
-)
-
-```
-
-```{r}
-
-# Binary staggered 'first' high exposure|severity treatment
-panelview(1 ~ ,                   
-            main = "t",                   
-            by.timing = TRUE,                   
-            collapse.history = TRUE,
-            pre.post = TRUE,
-            data = ,                   
-            index = c("iso3c", "year"))
-
+# labelled::var_label() <- list( = "")
 ```
 
 ### Relative time since first treatment
 
 ```{r}
 
-# for each treatment type vars,
-# create four new vars:
-# ever_treated binary var
-# relative time since first treatment var
-# short-term first treatment [0-3] binary var
-# medium/long-term first treatment [4-5] binary var (2003+5lead;2018-5lag)
+# cf. Deryugina, 2017
+# short-term: 0-4 years
+# medium/long-term 5-10 years
 
-treatment_iso_first_rel <- purrr::reduce(cohort.vars, function(data, x) {
-  
-  ever_treated <- paste0("D_", sub("cohort_D_", "", x), "_ever_treated")
-  rel_time <- paste0("D_", sub("cohort_D_", "", x), "_rel_time")
-  first_03 <- paste0("D_", sub("cohort_D_", "", x), "_first_03")
-  first_45 <- paste0("D_", sub("cohort_D_", "", x), "_first_45")
-  first_f6 <- paste0("D_", sub("cohort_D_", "", x), "_first_f6")
-  first_l6 <- paste0("D_", sub("cohort_D_", "", x), "_first_l6")
+data_first |> 
+  mutate(
+# relative time to first-treatment    
+    rel_time = year - cohort_dis,
+    rel_time_large = year - cohort_dis_large,
+# binary treatment, short/long, all hazards 
+    treat_first_short = ifelse(rel_time %in% 0:4, 1, 0),
+    treat_first_long = ifelse(rel_time %in% 5:10, 1, 0),
+    treat_first_out = ifelse(!rel_time %in% 0:10, 1, 0),
+# binary treatment, short/long, large hazards 
+    treat_first_large_short = ifelse(rel_time_large %in% 0:4, 1, 0),
+    treat_first_large_long = ifelse(rel_time_large %in% 5:10, 1, 0)
+  )
 
-  data |>
-    mutate(!!ever_treated := ifelse(.data[[x]]!=9999, 1, 0),
-           !!rel_time := ifelse(.data[[x]]!=9999, year - .data[[x]], .data[[x]])) |>
-    mutate(!!first_03 := ifelse(.data[[rel_time]] %in% c(0:3), 1, 0),
-           !!first_45 := ifelse(.data[[rel_time]] %in% c(4:5), 1, 0)) |> 
-    mutate(!!first_f6 := ifelse(.data[[rel_time]] > 5, 1, 0),
-           !!first_l6 := ifelse(.data[[rel_time]] < -5, 1, 0))
-  
-}, .init = treatment_iso_first)
-
-# Keep new variables only
-treatment_iso_first_rel <- subset(treatment_iso_first_rel, select = -c(cohort_D_H:D_LeHs_first))
 
 ```
 
@@ -204,44 +234,12 @@ treatment_iso_first_rel <- subset(treatment_iso_first_rel, select = -c(cohort_D_
 
 ```{r}
 
-treatment_iso_cum <- panel(treatment_iso, ~iso3c+year)
-
-treatment_iso_cum$D_HeLs_cum <- ave(treatment_iso_cum$D_HeLs, treatment_iso_cum$iso3c, FUN = cumsum)
-
-for (var in treat.vars) {
-  new_var <- paste0(var, "_cum")
-  treatment_iso_cum[[new_var]] <- ave(treatment_iso_cum[[var]], treatment_iso_cum$iso3c, FUN = cumsum)
-}
-
-treatment_iso_cum <- subset(treatment_iso_cum, select = -c(D_H:D_multi_int))
-
-```
-
-```{r}
-
-treat.vars.cum <- c("D_HeLs_cum", "D_HeHs_cum", "D_LeLs_cum", "D_LeHs_cum")
-
-for (var in treat.vars.cum) {
-  
-  new_var <- paste0("gr.", var)
-  treatment_iso_cum[[new_var]] <- cut(treatment_iso_cum[[var]], c(0, 1, 5, 15), 
-                                      right = F, include.lowest = T, ordered_result = T)
-  
-}
-
-```
-
-```{r}
-
-# panelView consider cum.treat.vars as continuous vars
-# it does not differentiate between not-treated and treated >= 1
 ```
 
 ## Relative treatment paths
 
 ```{r}
 
-treat.vars <- c("D_HeLs", "D_LeLs", "D_HeHs", "D_LeHs") 
 map(treat.vars, \(x) {   
   # Create the relative treatment time variables 
   treat_path <- treatment_iso |>    
@@ -285,6 +283,6 @@ map(treat.vars, \(x) {
 
 ```{r}
 
-save(treatment_iso, treatment_iso_first, treatment_iso_first_rel, treatment_iso_cum, 
-     file = here('data', 'data_treatment.RData'))
+save(
+     file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\treatment\\data_treatment.RData")
 ```
