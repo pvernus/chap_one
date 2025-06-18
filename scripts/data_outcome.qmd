@@ -201,6 +201,13 @@ load(file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\outcome
 
 ```{r quantity_outcome}
 
+# define categories
+debt_mod = c('F01')
+budget_mod = c('A01', 'A02')
+core_mod = c('B01', 'B02')
+pooled_mod = c('B03', 'B031', 'B032', 'B033', 'B04')
+project_mod = c('C01', 'D02')
+
 ## define the unit-specific quantity
 quantity_outcome <- data_sample |> 
 # commitments in constant USD  
@@ -208,8 +215,8 @@ quantity_outcome <- data_sample |>
   # total  
     commit_total = sum(usd_commitment_defl, na.rm = T),
   # co-operation modalities
-    commit_budg = sum(usd_commitment_defl[grepl("^A0", aid_t)], na.rm = T),
-    commit_proj = sum(usd_commitment_defl[aid_t=="C01|D02"], na.rm = T),   
+    commit_budg = sum(usd_commitment_defl[aid_t %in% budget_mod], na.rm = T),
+    commit_proj = sum(usd_commitment_defl[aid_t %in% project_mod], na.rm = T),   
   # channels of delivery 
     commit_state = sum(usd_commitment_defl[channel_nonstate==0], na.rm = T),
     commit_nonstate = sum(usd_commitment_defl[channel_nonstate==1], na.rm = T),
