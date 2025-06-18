@@ -13,6 +13,7 @@ library("lpdid")
 
 if (!require("pacman")) install.packages("pacman")
 pacman::p_load(
+  arrow,
   here,
   data.table,
   readxl,

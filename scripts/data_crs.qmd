@@ -10,39 +10,33 @@ source(here::here('scripts', 'library.R'))
 
 # Data import
 
-Data is extracted from the OECD platform as text files. There is one text file per year between 2002 and 2022, except for 2002-03 and 2004-05. There are 19 files in total.
+Data is extracted from the OECD CRS platform as a parquet file.
 
 ```{r data_import}
 
-# create path to folder w/ raw data
-# change path accordingly
-folder_path <- ("C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\source\\outcome\\crs")
-# create list of all files included in the folder
-file_list <- list.files(path = folder_path, full.names = TRUE, pattern = '^CRS 2')
-# create function to read the csv files
-read_clean_and_process <- function(file_path) {
-  data <- fread(file_path) |> 
-    janitor::clean_names() |> # clean variable names
-    mutate_if(is.character, str_trim) # delete white space before/after text
-  
-  return(data)
-}
+data_crs_import <- arrow::read_parquet(
+  file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\source\\outcome\\crs\\CRS.parquet") |> 
+  janitor::clean_names() |> # clean variable names
+  mutate_if(is.character, str_trim) # delete white space before/after text
+```
 
-# apply ad hoc function on all listed csv files in the folder
-data_list <- lapply(file_list, read_clean_and_process)
-# create a data.table
-data_import <- data.table::rbindlist(data_list, fill = T)
+## Save
+
+```{r save_data_crs_import}
+
+save(data_crs_import, 
+     file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\outcome\\data_crs_import.RData")
 ```
 
 # Data selection
 
-```{r select}
+```{r data_select}
 
-data_select <- data_import |> 
+# describe dataset
+# look_for(data_import)
+
 # select variables
-    dplyr::select(1:6, 8:26, 44, 45, 59, 46:49, 50:53, 74:77) |>
-# delete white space before/after text
-    mutate_if(is.character, str_trim)
+data_select <- select(data_crs_import, 1, 2:4, 5:6, 7:8, 9, 10:12, 13:15, 16:18, 19:24, 28:29, 50, 49, 64, 51:54, 55:58, 68, 79:82)
 ```
 
 # Data cleaning
@@ -51,28 +45,16 @@ data_select <- data_import |>
 
 I create four-digit ID variables for both donors and recipients.
 
-```{r id}
-
-# copy
-df <- data_select
+```{r data_id}
 
 # format donor_code values with leading zeros to ensure each value has 4 digits
-df <- df |> 
+data_id <- data_select |> 
   mutate(
     donor_id = sprintf("%04d", donor_code),
     recipient_id = sprintf("%04d", recipient_code)
     ) |> 
   relocate(donor_id, .after = donor_code) |> 
   relocate(recipient_id, .after = recipient_code)
-```
-
-## Cohorts
-
-```{r cohort}
-
-df <- df |> 
-  mutate(cohort_donor = min(year), .by = donor_id) |> 
-  mutate(cohort_recipient = min(year), .by = recipient_id)
 ```
 
 ## Calibrated sample
@@ -83,17 +65,26 @@ We reduce the sample to projects with the following characteristics:
 
 The channel of delivery became an *optional* reporting item on the new CRS++ reporting scheme in 2004 ([@dietrich2013]).
 
+The treatment window ends in 2018 (cf. GDIS).
+
 ```{r year}
-df <- filter(df, year > 2004)
+
+# copy
+df <- copy(data_id)
+
+df <- filter(df, year %in% 2004:2018)
 ```
 
 ### Nature of submission
 
--   **Remove**: (2) Revision, (5) Provisional data, (9) Net disbursements.
--   **Keep**: (1) New activity reported, (3) Previously reported activity (increase/decrease of earlier commitment, disbursement on earlier commitment), (8) Commitment derived from Disbursement, and NAs.
+-   **Remove**: (5) Provisional data, (9) Net disbursements.
+-   **Keep**: (1) New activity reported, (2) Revisions, (3) Previously reported activity (increase/decrease of earlier commitment, disbursement on earlier commitment), (8) Commitment derived from Disbursement, and NAs.
+
+> Note: Keep NAs or remove them as well?
 
 ```{r submission}
-df <- filter(df, !initial_report %in% c(2,5,9))
+
+df <- filter(df, !initial_report %in% c(5,9))
 ```
 
 ### Type of flow
@@ -108,11 +99,12 @@ df <- filter(df, flow_code %in% c(11, 13))
 
 ### Cooperation modalities
 
--   **Remove**: project observations in provider countries e.g. (E) Scholarships and student costs in donor countries, (G) Administrative costs not included elsewhere, and (H) Other in-donor expenditures.
+-   **Remove**: project observations in provider countries e.g. (E) Scholarships and student costs in donor countries, (G) Administrative costs not included elsewhere, and (H) Other in-donor expenditures. Also, "Donor country personnel" (D01).
 -   **Keep**: (A) Budget support, (B) Core contributions and pooled programmes and funds, (C) Project-type interventions, (D) Experts and other technical assistance, (F) Debt relief.
 
 ```{r modality}
-df <- filter(df, !grepl("^[EGH].*", aid_t) & aid_t != "D01")
+df <- filter(df, !grepl("^[EGH].*", aid_t) & aid_t != "D01") |> 
+  mutate(aid_t = na_if(aid_t, ""))
 ```
 
 ### Purposes
@@ -132,13 +124,6 @@ df <- filter(df, !grepl("^(91|93)|99820", purpose_code))
 -   **Keep**: specified countries.
 
 ```{r recipient}
-
-# share of total commitments allocated at the regional level
-summarize(df,
-          regional = sum(usd_commitment_defl[grepl("regional", recipient_name)], na.rm = T),
-          total = sum(usd_commitment_defl, na.rm = T),
-          reg_share_total = regional/total * 100
-          )
 
 df <- filter(df, !grepl('unspecified|regional', recipient_name))
 ```
@@ -164,12 +149,54 @@ df <- df |>
 
 Duplicates are removed.
 
-```{r dupes}
-data_clean <- unique(df)
+```{r data_crs_clean}
+data_crs_clean <- unique(df)
 rm(df)
 ```
 
+## Save
+
+```{r save_data_crs_clean}
+
+save(data_crs_clean, 
+     file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\outcome\\data_crs_clean.RData")
+```
+
+
 # Data transformation
+
+## Sectors
+
+```{r data_sector}
+
+# define categories 
+humanitarian_purp = c(72010:74020) 
+development_purp = c(11110:60063)   
+
+sectoral_purp = c(11110:43082)
+  infra_purp = c(11110:25040)
+    infra_social_purp = c(11110:16080)
+    infra_eco_purp = c(21010:25040)
+  prod_purp = c(31110:43082)
+budget_purp = 51010
+inkind_purp = c(52010:53040)
+debt_purp = c(60010:60063)
+
+# create variables 
+data_sector <- data_crs_clean |>    
+  mutate(     
+    sector_hum = fct(case_when(       
+      purpose_code %in% humanitarian_purp ~ "Humanitarian",       
+      purpose_code %in% development_purp ~ "Development",       
+      .default = "Other"   )),     
+    sector_multi = fct(case_when(       
+      purpose_code %in% humanitarian_purp ~ "Humanitarian",       
+      purpose_code %in% sectoral_purp ~ "Development (sectoral)",       
+      purpose_code %in% budget_purp ~ "Budget support",       
+      purpose_code %in% debt_purp ~ "Debt relief",       
+      ))) |>    
+  relocate(sector_hum:sector_multi, .after = aid_t)
+```
 
 ## Channel of delivery
 
@@ -184,7 +211,7 @@ The name of the agency can also be added manually by the provider, but reporting
 #### Table: Example with the Donor Government group category.
 
 | Code | Level 1 | Code | Level 2 | Code | Level 3 | Reported name |
-|----|----|----|----|----|----|----|
+|-----------|-----------|-----------|-----------|-----------|-----------|-----------|
 | 10000 | Public Sector Institutions | 11000 | Donor Government | 11001 | Central Government | Ex: Ministry Of Employment And Labor, The U.S Department Of Homeland Security, Miscellaneous Suppliers, etc. |
 |  |  |  |  | 11002 | Local Government | Ex: Comune Di Reggio Emilia, Local Government, Busan Metropolitan City, etc. |
 |  |  |  |  | 11003 | Public corporations | Ex: The Export-Import Bank Of Korea, Kfw, Public Corporations, etc. |
@@ -197,7 +224,7 @@ To help the analysis, I create a unique code variable using the most granular le
 ```{r data_channel}
 
 # Create a copy of the data
-df <- copy(data_clean)
+df <- copy(data_sector)
 
 # Rename columns
 setnames(df, old = "parent_channel_code", new = "channel_parent_code")
@@ -277,17 +304,11 @@ delivery_crs_code <- read_xlsx(
          channel_code_2024 = channel_id, 
          channel_name_2024 = full_name_english)
 
-# copy
-df <- copy(data_channel_level)
-
 # merge w/ data set
-df <- left_join(df, delivery_crs_code,
+data_channel_code <- left_join(data_channel_level, delivery_crs_code,
                            by = c('channel_code_unique' = 'channel_code_2024')) |>
   relocate(channel_parent_code_2024, .after = channel_parent_code) |> 
   relocate(channel_name_2024, .after = channel_name)
-
-data_channel_code <- df
-rm(df)
 
 # Sample
 data_channel_code |> 
@@ -311,11 +332,8 @@ channel_nonstate = c(20000:63000)
 # channel_nonstate_priv = c(30000:32000, 60000:63000)
 # channel_other = 90000
 
-# copy
-df <- copy(data_channel_code)
-
 # create variable
-df <- df |> 
+data_channel_state <- data_channel_code |> 
   mutate(
     channel_state = fct(case_when(
       channel_parent_code_2024 %in% channel_state ~"State",
@@ -323,9 +341,6 @@ df <- df |>
       .default = "Other"
     ))) |> 
   relocate(channel_state, .after = channel_name_2024)
-
-data_channel_state <- df
-rm(df)
 ```
 
 > To do (1): create multinomial channel variable.
@@ -337,66 +352,33 @@ rm(df)
 ```{r data_mod}
 
 # define categories
-debt = c('F01')
-budget = c('A01', 'A02')
-core = c('B01', 'B02')
-pooled = c('B03', 'B031', 'B032', 'B033', 'B04')
-project = c('C01', 'D02')
-
-# copy
-df <- copy(data_channel)
+debt_mod = c('F01')
+budget_mod = c('A01', 'A02')
+core_mod = c('B01', 'B02')
+pooled_mod = c('B03', 'B031', 'B032', 'B033', 'B04')
+project_mod = c('C01', 'D02')
 
 # create variable
-data_mod <- df |> 
+data_mod <- data_channel_state |> 
   mutate(flow_modality = fct(case_when(
-    aid_t %in% debt ~ "Debt relief",
-    aid_t %in% budget ~ "Budget support",
-    aid_t %in% core ~ "Core contributions",
-    aid_t %in% pooled ~ "Pooled funding",
-    aid_t %in% project ~ "Project-type interventions and Other technical assistance",
+    aid_t %in% debt_mod | purpose_code %in% debt_purp ~ "Debt relief",
+    aid_t %in% budget_mod | purpose_code %in% budget_purp ~ "Budget support",
+    aid_t %in% core_mod ~ "Core contributions",
+    aid_t %in% pooled_mod ~ "Pooled funding",
+    aid_t %in% project_mod ~ "Project-type interventions and Other technical assistance",
     .default = "Other"
   ))) |> 
   relocate(flow_modality, .after = aid_t)
-
-rm(df)
 ```
 
-## Sectors
+## Cohorts
 
-```{r data_sector}
+```{r data_cohort}
 
-# define categories
-humanitarian = c(72010:74020)
-development = c(11110:60063)
-  sectoral = c(11110:43082)
-    infra = c(11110:25040)
-      infra_social = c(11110:16080)
-      infra_eco = c(21010:25040)
-    prod = c(31110:43082)
-  budget = 51010
-  inkind = c(52010:53040)
-  debt = c(60010:60063)
-
-# copy
-df <- copy(data_mod)
-  
 # create variables
-data_sector <- df |> 
-  mutate(
-    sector_hum = fct(case_when(
-      purpose_code %in% humanitarian ~ "Humanitarian",
-      purpose_code %in% development ~ "Development",
-      .default = "Other"
-  )),
-    sector_multi = fct(case_when(
-      purpose_code %in% humanitarian ~ "Humanitarian",
-      purpose_code %in% sectoral ~ "Development (sectoral)",
-      purpose_code %in% budget ~ "Budget support",
-      purpose_code %in% debt ~ "Debt relief",
-      ))) |> 
-  relocate(sector_hum:sector_multi, .after = aid_t)
-
-rm(df)
+data_cohort <- data_mod |>    
+  mutate(cohort_donor = min(year), .by = donor_id) |>    
+  mutate(cohort_recipient = min(year), .by = recipient_id)
 ```
 
 ## Save
@@ -404,23 +386,34 @@ rm(df)
 ```{r data_crs}
 
 # copy
-data_crs <- copy(data_sector)
+data_crs <- copy(data_cohort)
 
 # save
 save(data_crs, delivery_crs_code,
      file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\outcome\\data_crs.RData")
-
-# remove
-rm(list = ls())
 ```
 
 ```{r data_iso3c}
 
 # list recipient iso3c
-data_iso3c <- data_crs |> select(country = recipient_name, iso3c) |> unique() |> arrange(country)
+data_iso3c <- data_crs |> 
+  select(country = recipient_name, iso3c) |> 
+  unique() |> 
+  arrange(country)
 
 # save
 save(data_iso3c,
      file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\outcome\\data_iso3c.RData")
+
+# list donor, recipient, and year list
+data_unit_outcome <- data_crs |> 
+  expand(nesting(donor_id, donor_name, cohort_donor), # donor
+         nesting(recipient_id, recipient_name, iso3c, cohort_recipient), # recipient
+         year) |> # year
+  arrange(recipient_name)
+
+# save
+save(data_unit_outcome,
+     file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\outcome\\data_unit_outcome.RData")
 
 ```

@@ -232,10 +232,6 @@ data_first |>
 
 ### Cumulative staggered
 
-```{r}
-
-```
-
 ## Relative treatment paths
 
 ```{r}

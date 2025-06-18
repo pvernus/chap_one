@@ -18,56 +18,92 @@ load("C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\outcome\\data_
 
 ## Quantity
 
-+ Commitments in constant dollars
+-   Commitments in constant dollars
 
-+ Share of total commitments (%)
+-   Share of total commitments (%)
 
 > **To do**: consider disbursements.
 
 ### Missing
 
-```{r}
+#### Modality
 
-## missing
+```{r na_modality}
 
-# modality
-
+# share commitments w/ missing modality by year
 data_crs |> 
 #  filter(sector_code!=600) |>  
   group_by(year) |> 
   summarize(
     total_amount = sum(usd_commitment_defl, na.rm = T),
-    na_amount = sum(usd_commitment_defl[is.na(flow_modality)], na.rm = T)
+    na_amount = sum(usd_commitment_defl[flow_modality=='Other'], na.rm = T)
     ) |> 
   mutate(share_of_total = round(na_amount / total_amount * 100, 2))
 
+# focus on 
+# years with high missing values
+# obs. with no modality
 data_crs |> 
-  filter(year %in% c(2005:2009) & is.na(flow_modality)) |> 
-  filter(sector_code!=600) |> 
+  filter(year %in% c(2005:2009), flow_modality=='Other', is.na(aid_t)) |> 
   arrange(desc(usd_commitment_defl))
 
+# focus on
+# main dyads with missing values
 data_crs |> 
-  filter(year %in% c(2005:2009) & is.na(flow_modality)) |> 
-  filter(sector_code!=600) |> 
+  filter(year %in% c(2005:2009), flow_modality=='Other', is.na(aid_t)) |> 
   group_by(donor_name, recipient_name) |> 
   summarize(total = sum(usd_commitment_defl, na.rm = T)) |> 
   arrange(desc(total))
+```
 
-# channel
+#### Channel
 
+```{r na_channel}
+
+# by year
 data_crs |> 
-  filter(sector_code!=600) |>  
   group_by(year) |> 
   summarize(
     total_amount = sum(usd_commitment_defl, na.rm = T),
-    na_amount = sum(usd_commitment_defl[is.na(channel_name_2024)], na.rm = T)) |> 
+    na_amount = sum(usd_commitment_defl[is.na(channel_code_unique)], na.rm = T)) |> 
   mutate(share_of_total = round(na_amount / total_amount * 100, 2))
 
+# NOTE: missing data concentrate between 2005 and 2007  
+
+# focus on missing data between 2005:2007
+# group by purpose
 data_crs |> 
-  filter(sector_code!=600) |>
-  filter(year %in% c(2005:2009) & is.na(channel_name_2024)) |> 
-  arrange(desc(usd_commitment_defl))
+  filter(year %in% c(2005:2007), is.na(channel_name_2024)) |> 
+  summarize(n = sum(usd_commitment_defl, na.rm = T), .by = purpose_name) |> 
+  mutate(total = sum(n)) |>
+  mutate(share = round(n / total * 100, 2)) |>
+  arrange(desc(n))
+
+# NOTE: almost a quarter of missing data between 2005:2007 is debt forgiveness
+# Potential imputation rule: assign missing data with debt forgiveness purpose to State channels
+
+# group by recipient
+data_crs |> 
+  filter(year %in% c(2005:2007), is.na(channel_name_2024)) |> 
+  summarize(n = sum(usd_commitment_defl, na.rm = T), .by = recipient_name) |> 
+  mutate(total = sum(n)) |>
+  mutate(share = round(n / total * 100, 2)) |>
+  arrange(desc(n))
+
+# NOTE: one quarter of missing data between 2005:2007 occurs in three countries: Nigeria, Iraq, India
+
+# by purpose and recipient
+data_crs |> 
+  filter(year %in% c(2005:2007), is.na(channel_name_2024)) |> 
+  summarize(n = sum(usd_commitment_defl, na.rm = T), .by = c(purpose_name, recipient_name)) |> 
+  mutate(total = sum(n)) |>
+  mutate(share = round(n / total * 100, 2)) |>
+  arrange(desc(n))
+
+# NOTE: 16% of missing data between 2005:2007 is due to debt forgiveness in Nigeria and Irak
+
 ```
+
 
 ```{r}
 
@@ -114,27 +150,25 @@ data_crs |>
 
 > **To do (1)**: cross-tables channels, modalities, and sectors + type of flow.
 
-> **To do (2)**: add new variable sector_main_code.
-
 ## Unit of observation
 
 ### Donor-Recipient pairs
 
-Following Faye and Niehaus (2012) and Arezki et al. (2025), I adopt a dyadic approach.
+Following Faye and Niehaus (2012) and Arezki et al. (2025), I adopt a dyadic approach in a panel setting.
 
 **Advantages**
 
-+ more credible counterfactual. Following a shock, changes in flows received by a recipient can be due to changes in flow from a specific donor or changes in the composition of the pool of donors. remove the risk of composition effect at the donor level (however, it remains at the sector level).
+-   more credible counterfactual. Following a shock, changes in flows received by a recipient can be due to changes in flow from a specific donor or changes in the composition of the pool of donors. remove the risk of composition effect at the donor level (however, it remains at the sector level).
 
-+ allows to distinguish between the effect's extensive vs. intensive margins.
+-   allows to distinguish between the effect's extensive vs. intensive margins.
 
-+ allows us to look at the effects of interference (i) between donors, within a recipient country, and (ii) between recipients, within a donor's portfolio.
+-   allows us to look at the effects of interference (i) between donors, within a recipient country, and (ii) between recipients, within a donor's portfolio.
 
 **Disadvantages**
 
-+ higher risk of measurement error. However, I don't see any systematic bias one way or the other, but this can create noise in the estimation of treatment effects.
+-   higher risk of measurement error. However, I don't see any systematic bias one way or the other, but this can create noise in the estimation of treatment effects.
 
-+ Faye and Niehaus (2012) and Arezki et al. (2025) don't include multilateral donors, for different reasons. However, I don't see real restriction on including them in the analysis if I use dyad-level FEs.
+-   Faye and Niehaus (2012) and Arezki et al. (2025) don't include multilateral donors, for different reasons. However, I don't see real restriction on including them in the analysis if I use dyad-level FEs.
 
 ```{r}
 # donors 
@@ -143,48 +177,56 @@ length(unique(data_crs$donor_id))
 length(unique(data_crs$recipient_id))
 # pairs
 length(unique(data_crs$donor_id)) * length(unique(data_crs$recipient_id))
+# years
+
+# total number of observations
+length(unique(data_crs$donor_id)) * length(unique(data_crs$recipient_id)) * length(unique(data_crs$year))
 ```
 
 ## Sample
 
 ```{r data_sample}
 
-data_sample <- data_crs
+data_sample <- copy(data_crs)
 ```
 
-+ **Unit of observation**
+-   **Unit of observation**
 
-```{r unit_outcome}
+```{r data_unit_outcome}
 
-# define the unit of observation
-unit_outcome <- data_sample |> 
-  expand(nesting(donor_id, donor_name, cohort_donor), # donor
-         nesting(recipient_id, recipient_name, cohort_recipient), # recipient
-         year) # year
+load(file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\outcome\\data_unit_outcome.RData")
 ```
 
-+ **Quantity**
+-   **Quantity**
 
 ```{r quantity_outcome}
 
 ## define the unit-specific quantity
 quantity_outcome <- data_sample |> 
+# commitments in constant USD  
   summarize(
-# total  
-  commit_total = sum(usd_commitment_defl, na.rm = T),
-# channels of delivery 
-  commit_nonstate = sum(usd_commitment_defl[channel_nonstate==1], na.rm = T),
-# co-operation modalities
-  commit_budg = sum(usd_commitment_defl[grepl("^A0", aid_t)], na.rm = T),
-  commit_proj = sum(usd_commitment_defl[aid_t=="C01|D02"], na.rm = T), 
-# flow types
-  commit_grant = sum(usd_commitment_defl[flow_code==11], na.rm = T),
-  commit_loan = sum(usd_commitment_defl[flow_code==13], na.rm = T), 
+  # total  
+    commit_total = sum(usd_commitment_defl, na.rm = T),
+  # co-operation modalities
+    commit_budg = sum(usd_commitment_defl[grepl("^A0", aid_t)], na.rm = T),
+    commit_proj = sum(usd_commitment_defl[aid_t=="C01|D02"], na.rm = T),   
+  # channels of delivery 
+    commit_state = sum(usd_commitment_defl[channel_nonstate==0], na.rm = T),
+    commit_nonstate = sum(usd_commitment_defl[channel_nonstate==1], na.rm = T),
 .by = c(donor_id, recipient_id, year)
-)
+) |> 
+# proportions of total commitments in constant USD  
+  mutate(
+  # co-operation modalities
+    sh_budg = commit_budg / commit_total,
+    sh_proj =  commit_proj / commit_total,
+  # channels of delivery 
+    sh_state =  commit_state / commit_total,
+    sh_nonstate =  commit_nonstate / commit_total,
+  )
 ```
 
-+ **Merge**
+-   **Merge**
 
 ```{r outcome}
 
@@ -196,26 +238,9 @@ outcome <- merge(unit_outcome, quantity_outcome,
     is.na(.x) & (cohort_donor <= year | cohort_recipient <= year), 0, .x)))
 ```
 
-> **To do**: consider alternative definitions of nonzero outcomes, based on (i) rounding (ex: at 0.001 MUSD unit) and (ii) by including a threshold (ex: >= 1 000 USD).
+> **To do**: consider alternative definitions of nonzero outcomes, based on (i) rounding (ex: at 0.001 MUSD unit) and (ii) by including a threshold (ex: \>= 1 000 USD).
 
-+ **ISO codes**
-
-```{r iso}
-
-# add new variable
-outcome$iso3c <- countrycode(sourcevar = outcome[, "recipient_name"], 
-                             origin = "country.name", destination = "iso3c", warn = T) 
-# some values were not matched unambiguously: Kosovo, Micronesia 
-outcome <- outcome |> 
-  mutate(iso3c = case_when( 
-    recipient_name=="Micronesia" ~ "FSM",
-    recipient_name=="Kosovo" ~ "XXK", 
-    .default = iso3c )
-    ) |> 
-  relocate(iso3c, .after = recipient_name)
-```
-
-+ **Duplicates**
+-   **Duplicates**
 
 ```{r outcome_dupes}
 
@@ -224,13 +249,13 @@ janitor::get_dupes(outcome, donor_id, recipient_id, year)
 
 # Appendix
 
-+ List of donors
+-   List of donors
 
-+ List of recipients
+-   List of recipients
 
-+ Waffle plot with entry/exit of donors and recipients
+-   Waffle plot with entry/exit of donors and recipients
 
-+ Table with Total commitments (%) per (i) donor and (ii) recipient
+-   Table with Total commitments (%) per (i) donor and (ii) recipient
 
 # Save
 
