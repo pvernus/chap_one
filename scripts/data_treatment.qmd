@@ -13,7 +13,10 @@ source(here::here('scripts', 'library.R'))
 
 ```{r load.data_magnitude}
 
-load(here("data", "data_magnitude.RData"))
+# load(here("data", "data_magnitude.RData"))
+load(file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\treatment\\data_severity.RData")
+
+data_magnitude <- data_severity
 ```
 
 ## Sample
@@ -49,7 +52,7 @@ data_dis <- df |>
   replace_na(list(value_large = 0))
 
 # load list recipient iso3c
-load(file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\outcome\\data_iso3c.RData")
+load(file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\outcome\\data_unit.RData")
 
 # define unit and time sample
 data_unit <- data_iso3c |> 
@@ -206,6 +209,28 @@ data_first <- data_cohort |>
   )
 ```
 
+#### Treatment paths
+
+```{r}
+
+panelview(1 ~ treat_first_stag, data = data_first,           
+          index = c("iso3c","year"),
+          axis.lab = "time",
+          by.timing = TRUE,                   
+          background = "white",
+          main = "Treatment Status: All events"
+          )
+
+panelview(1 ~ treat_large_first_stag, data = data_first,           
+          index = c("iso3c","year"),
+          axis.lab = "time",
+          by.timing = TRUE,                   
+          background = "white",
+          main = "Treatment Status: Large events only"
+          )
+```
+
+
 ```{r label_vars}
 
 # Label new variables
@@ -240,6 +265,7 @@ data_first <- data_first |>
 ## Relative treatment paths
 
 ```{r}
+#| eval: false
 
 map(treat.vars, \(x) {   
   # Create the relative treatment time variables 

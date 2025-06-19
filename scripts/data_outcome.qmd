@@ -32,28 +32,16 @@ load("C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\outcome\\data_
 
 # share commitments w/ missing modality by year
 data_crs |> 
-#  filter(sector_code!=600) |>  
   group_by(year) |> 
   summarize(
     total_amount = sum(usd_commitment_defl, na.rm = T),
-    na_amount = sum(usd_commitment_defl[flow_modality=='Other'], na.rm = T)
+    na_amount = sum(usd_commitment_defl[is.na(aid_t)], na.rm = T),
+    other_amount = sum(usd_commitment_defl[flow_modality=='Other'], na.rm = T)
     ) |> 
-  mutate(share_of_total = round(na_amount / total_amount * 100, 2))
-
-# focus on 
-# years with high missing values
-# obs. with no modality
-data_crs |> 
-  filter(year %in% c(2005:2009), flow_modality=='Other', is.na(aid_t)) |> 
-  arrange(desc(usd_commitment_defl))
-
-# focus on
-# main dyads with missing values
-data_crs |> 
-  filter(year %in% c(2005:2009), flow_modality=='Other', is.na(aid_t)) |> 
-  group_by(donor_name, recipient_name) |> 
-  summarize(total = sum(usd_commitment_defl, na.rm = T)) |> 
-  arrange(desc(total))
+  mutate(
+    share_na = round(na_amount / total_amount * 100, 2),
+    share_other = round(other_amount / total_amount * 100, 2)
+    )
 ```
 
 #### Channel
@@ -66,52 +54,52 @@ data_crs |>
   summarize(
     total_amount = sum(usd_commitment_defl, na.rm = T),
     na_amount = sum(usd_commitment_defl[is.na(channel_code_unique)], na.rm = T)) |> 
-  mutate(share_of_total = round(na_amount / total_amount * 100, 2))
+  mutate(share_na = round(na_amount / total_amount * 100, 2))
 
-# NOTE: missing data concentrate between 2005 and 2007  
+# NOTE: missing data concentrate between 2004 and 2007  
 
-# focus on missing data between 2005:2007
+# focus on missing data between 2004:2007
 # group by purpose
 data_crs |> 
-  filter(year %in% c(2005:2007), is.na(channel_name_2024)) |> 
-  summarize(n = sum(usd_commitment_defl, na.rm = T), .by = purpose_name) |> 
+  filter(year %in% c(2004:2007), is.na(channel_code_unique)) |> 
+  summarize(n = sum(usd_commitment_defl, na.rm = T), .by = c(purpose_code, purpose_name)) |> 
   mutate(total = sum(n)) |>
   mutate(share = round(n / total * 100, 2)) |>
   arrange(desc(n))
 
-# NOTE: almost a quarter of missing data between 2005:2007 is debt forgiveness
-# Potential imputation rule: assign missing data with debt forgiveness purpose to State channels
+# NOTE: (following data imputation related to debt forgiveness) no clear sectoral concentration of missing data
 
 # group by recipient
 data_crs |> 
-  filter(year %in% c(2005:2007), is.na(channel_name_2024)) |> 
+  filter(year %in% c(2004:2007), is.na(channel_code_unique)) |> 
   summarize(n = sum(usd_commitment_defl, na.rm = T), .by = recipient_name) |> 
   mutate(total = sum(n)) |>
   mutate(share = round(n / total * 100, 2)) |>
   arrange(desc(n))
 
-# NOTE: one quarter of missing data between 2005:2007 occurs in three countries: Nigeria, Iraq, India
+# NOTE: Top 3 country (India, Nigeria, Pakistan) = 1/4 of NAs
 
 # by purpose and recipient
 data_crs |> 
-  filter(year %in% c(2005:2007), is.na(channel_name_2024)) |> 
+  filter(year %in% c(2004:2007), is.na(channel_code_unique)) |> 
   summarize(n = sum(usd_commitment_defl, na.rm = T), .by = c(purpose_name, recipient_name)) |> 
   mutate(total = sum(n)) |>
   mutate(share = round(n / total * 100, 2)) |>
   arrange(desc(n))
 
-# NOTE: 16% of missing data between 2005:2007 is due to debt forgiveness in Nigeria and Irak
+# NOTE: Top 3 (Debt buy-back in	Nigeria, Road transport	in India, Primary education	in West Bank and Gaza Strip) = 7% of NAs
 
 ```
 
+### Cross-tables
 
-```{r}
+```{r cross-table}
 
 data_crs |> 
   group_by(flow_modality, channel_state) |> 
   summarize(total_amount = sum(usd_commitment_defl, na.rm = T), .groups = 'drop') |> 
   mutate(share_of_total = total_amount / sum(total_amount) * 100, .by = flow_modality) |> 
-  arrange(flow_modality)
+  arrange(flow_modality, desc(share_of_total))
 
 ## sector (bi)
 # modality
@@ -120,14 +108,14 @@ data_crs |>
   summarize(total_amount = sum(usd_commitment_defl, na.rm = T), .groups = 'drop') |> 
   mutate(share_of_total = total_amount / sum(total_amount) * 100, 
          .by = sector_hum) |> 
-  arrange(sector_hum)
+  arrange(sector_hum, desc(share_of_total))
 # channel
 data_crs |> 
   group_by(sector_hum, channel_state) |> 
   summarize(total_amount = sum(usd_commitment_defl, na.rm = T), .groups = 'drop') |> 
   mutate(share_of_total = total_amount / sum(total_amount) * 100, 
          .by = sector_hum) |> 
-  arrange(sector_hum)
+  arrange(sector_hum, desc(share_of_total))
 
 ## sector (multi)
 # modality
@@ -150,9 +138,88 @@ data_crs |>
 
 > **To do (1)**: cross-tables channels, modalities, and sectors + type of flow.
 
-## Unit of observation
+```{r}
 
-### Donor-Recipient pairs
+prop(xtabs(
+  usd_commitment_defl ~ flow_modality + channel_state,
+  data = data_crs,
+  na.action = na.omit
+))
+
+prop(xtabs(
+  usd_disbursement_defl ~ flow_modality + channel_state,
+  data = data_crs,
+  na.action = na.omit
+))
+```
+
+## Variables
+
+-   **Quantity**
+
+```{r quantity}
+
+## define the unit-specific quantity
+quantity_outcome <- data_crs |> 
+# commitments in constant USD  
+  summarize(
+  # total  
+    commit_total = sum(usd_commitment_defl, na.rm = T),
+  # co-operation modalities
+    commit_budg = sum(usd_commitment_defl[as.integer(flow_modality)==1], na.rm = T),
+    commit_proj = sum(usd_commitment_defl[as.integer(flow_modality)==2], na.rm = T),   
+  # channels of delivery 
+    commit_state = sum(usd_commitment_defl[as.integer(channel_state)==1], na.rm = T),
+    commit_nonstate = sum(usd_commitment_defl[as.integer(channel_state)==2], na.rm = T),
+.by = c(donor_id, recipient_id, year)
+) |> 
+# proportions of total commitments in constant USD  
+  mutate(
+  # co-operation modalities
+    sh_budg = ifelse(commit_total>0, commit_budg/commit_total, 0),
+    sh_proj =  ifelse(commit_total>0, commit_proj/commit_total, 0),
+  # channels of delivery 
+    sh_state = ifelse(commit_total>0, commit_state/commit_total, 0),
+    sh_nonstate = ifelse(commit_total>0, commit_nonstate/commit_total, 0),
+  )
+```
+
+```{r quantity_outcome_hum}
+
+## define the unit-specific quantity
+quantity_outcome_hum <- data_crs |> 
+# commitments in constant USD  
+  summarize(
+  # total  
+    commit_total = sum(usd_commitment_defl, na.rm = T),
+  # co-operation modalities
+    commit_budg = sum(usd_commitment_defl[as.integer(flow_modality)==1], na.rm = T),
+    commit_proj = sum(usd_commitment_defl[as.integer(flow_modality)==2], na.rm = T),   
+  # channels of delivery 
+    commit_state = sum(usd_commitment_defl[as.integer(channel_state)==1], na.rm = T),
+    commit_nonstate = sum(usd_commitment_defl[as.integer(channel_state)==2], na.rm = T),
+.by = c(donor_id, recipient_id, sector_hum, year)
+) |> 
+# proportions of total commitments in constant USD  
+  mutate(
+  # co-operation modalities
+    sh_budg = ifelse(commit_total>0, commit_budg/commit_total, 0),
+    sh_proj =  ifelse(commit_total>0, commit_proj/commit_total, 0),
+  # channels of delivery 
+    sh_state = ifelse(commit_total>0, commit_state/commit_total, 0),
+    sh_nonstate = ifelse(commit_total>0, commit_nonstate/commit_total, 0),
+  ) |> 
+  arrange(donor_id, recipient_id)
+```
+
+> For the proportions, how to deal with negative commitments? 
+
+## Units of observation
+
+```{r data_unit_outcome}
+
+load(file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\outcome\\data_unit.RData")
+```
 
 Following Faye and Niehaus (2012) and Arezki et al. (2025), I adopt a dyadic approach in a panel setting.
 
@@ -183,63 +250,25 @@ length(unique(data_crs$donor_id)) * length(unique(data_crs$recipient_id))
 length(unique(data_crs$donor_id)) * length(unique(data_crs$recipient_id)) * length(unique(data_crs$year))
 ```
 
-## Sample
-
-```{r data_sample}
-
-data_sample <- copy(data_crs)
-```
-
--   **Unit of observation**
-
-```{r data_unit_outcome}
-
-load(file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\outcome\\data_unit_outcome.RData")
-```
-
--   **Quantity**
-
-```{r quantity_outcome}
-
-# define categories
-debt_mod = c('F01')
-budget_mod = c('A01', 'A02')
-core_mod = c('B01', 'B02')
-pooled_mod = c('B03', 'B031', 'B032', 'B033', 'B04')
-project_mod = c('C01', 'D02')
-
-## define the unit-specific quantity
-quantity_outcome <- data_sample |> 
-# commitments in constant USD  
-  summarize(
-  # total  
-    commit_total = sum(usd_commitment_defl, na.rm = T),
-  # co-operation modalities
-    commit_budg = sum(usd_commitment_defl[aid_t %in% budget_mod], na.rm = T),
-    commit_proj = sum(usd_commitment_defl[aid_t %in% project_mod], na.rm = T),   
-  # channels of delivery 
-    commit_state = sum(usd_commitment_defl[channel_nonstate==0], na.rm = T),
-    commit_nonstate = sum(usd_commitment_defl[channel_nonstate==1], na.rm = T),
-.by = c(donor_id, recipient_id, year)
-) |> 
-# proportions of total commitments in constant USD  
-  mutate(
-  # co-operation modalities
-    sh_budg = commit_budg / commit_total,
-    sh_proj =  commit_proj / commit_total,
-  # channels of delivery 
-    sh_state =  commit_state / commit_total,
-    sh_nonstate =  commit_nonstate / commit_total,
-  )
-```
+## Outcome sample
 
 -   **Merge**
 
 ```{r outcome}
 
 ## merge outcome data
-outcome <- merge(unit_outcome, quantity_outcome, 
+data_outcome <- merge(data_unit, quantity_outcome, 
                  by=c("donor_id", "recipient_id", "year"), all.x = TRUE) |> 
+# treat "true" zeros: NA if country's registration in OECD CRS > current period
+  mutate(across(starts_with("commit_"), ~ ifelse(
+    is.na(.x) & (cohort_donor <= year | cohort_recipient <= year), 0, .x)))
+```
+
+```{r outcome_hum}
+
+## merge outcome data
+data_outcome_hum <- merge(data_unit_hum, quantity_outcome_hum, 
+                 by=c("donor_id", "recipient_id", "sector_hum", "year"), all.x = TRUE) |> 
 # treat "true" zeros: NA if country's registration in OECD CRS > current period
   mutate(across(starts_with("commit_"), ~ ifelse(
     is.na(.x) & (cohort_donor <= year | cohort_recipient <= year), 0, .x)))
@@ -251,7 +280,8 @@ outcome <- merge(unit_outcome, quantity_outcome,
 
 ```{r outcome_dupes}
 
-janitor::get_dupes(outcome, donor_id, recipient_id, year)
+janitor::get_dupes(data_outcome, donor_id, recipient_id, year)
+janitor::get_dupes(data_outcome_hum, donor_id, recipient_id, sector_hum, year)
 ```
 
 # Appendix
@@ -266,12 +296,15 @@ janitor::get_dupes(outcome, donor_id, recipient_id, year)
 
 # Save
 
-```{r}
+```{r data_outcome}
 
 # save
-save(outcome, 
+save(data_outcome, data_outcome_hum,
      file =  "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\outcome\\data_outcome.RData")
-
-# remove
-rm(list = ls())
 ```
+
+```{r}
+# remove all objects in the environment
+# rm(list = ls())
+```
+

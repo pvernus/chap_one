@@ -13,108 +13,51 @@ source(here::here('scripts', 'library.R'))
 ```{r load_data}
 
 # outcome
-load(here('data', 'data_outcome.RData'))
+load(file =  "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\outcome\\data_outcome.RData")
 # treatment
-load(here('data', 'data_treatment.RData'))
+load(file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\treatment\\data_treatment.RData")
 # covariates
-load(here('data', 'data_covariate.RData'))
+# load(here('data', 'data_covariate.RData'))
 ```
 
-# Treatment
-
-```{r}
-
-treatment_iso_sample <- treatment_iso |> 
-  left_join(treatment_iso_first, by = c("iso3c", "year")) |> 
-  left_join(treatment_iso_first_rel, by = c("iso3c", "year")) |>
-  left_join(treatment_iso_cum, by = c("iso3c", "year"))
-```
-
-# Outcome
-
-```{r outcome_type}
-
-outcome_type <- outcome |> 
-# Category  
-  mutate(
-    humanitarian = ifelse(grepl("^720|^730", purpose_code), 1, 0),
-    gov_peace = ifelse(grepl("^15[0-2]", purpose_code), 1, 0),
-    development = ifelse(grepl("^(1[1-4]|160|[2-4][0-9]|5[2-3]|740)", purpose_code), 1, 0),
-    budgetary = ifelse(grepl("^510", purpose_code), 1, 0)
-  ) |> 
-  mutate(category = case_when(
-    grepl("^720|^730", purpose_code) ~ "Humanitarian",
-    grepl("^15[0-2]", purpose_code) ~ "Gov. & Peace",
-    grepl("^(1[1-4]|160|[2-4][0-9]|5[2-3]|740)", purpose_code) ~ "Development",
-    grepl("^510", purpose_code) ~ "Budgetary",
-  ))
-```
-
-```{r outcome_year}
-
-outcome_year <- outcome_type |> 
-  filter(year %in% c(2003:2018)) |>  
-# NOTE: change according to data constraints in treatment
-# Create relative time variable
-  mutate(t = year - min(year) + 1) |> 
-  relocate(t, .after = year)
-```
-
-```{r outcome_sect}
-
-outcome_sect <- outcome_year |> 
-  select(iso3c, purpose_code, category, year, commit, commit_dummy) |> 
-  mutate(iso_sect_id = paste0(iso3c, "_", purpose_code)) |> 
-  relocate(iso_sect_id, .after = purpose_code)
-```
-
-```{r outcome_iso}
-
-## Alternative sample: country-year level
-
-# Aggregate
-outcome_iso <- summarize(outcome_year,
-          Y = sum(commit, na.rm = T),
-          .by = c("iso3c", "year", "t")
-          ) |> 
-  mutate(Y_d = ifelse(Y > 0, 1, 0))
-
-# By category
-outcome_iso_cat <- summarize(outcome_year,
-          Y = sum(commit, na.rm = T),
-          .by = c("iso3c", "year", "t", "category")
-          ) |> 
-  mutate(Y_d = ifelse(Y > 0, 1, 0))
-
-```
-
-```{r}
-
-## Multinomial
-```
-
-# Covariates
+> NOTE(1): should the typology (categories) be defined here or earlier in data_crs? E.g. data cleaning in `data_crs` and data transformation in `data_sample`
+>
+> NOTE(2): same question as above for the definition of the observation window.
 
 # Sample
 
 ```{r sample_data}
 
-## Country-Year
-data_sample_iso <- left_join(outcome_iso, treatment_iso_sample, 
-                                 by = c("iso3c", "year")) |> 
-  mutate(across(matches("^D_(L|H)"), \(x) replace_na(x, 0))) |> 
-  mutate(across(matches("^cohort"), \(x) replace_na(x, 9999))) |> 
-  left_join(data_covariate, by = c("iso3c", "year"))
+outcome <- data_outcome |> 
+  select(donor_id, recipient_id, year, starts_with("commit"))
 
-# By category
-data_sample_iso_cat <- left_join(outcome_iso_cat, treatment_iso_sample, 
-                                 by = c("iso3c", "year")) |> 
-  mutate(across(matches("^D_(L|H)"), \(x) replace_na(x, 0))) |> 
-  mutate(across(matches("^cohort"), \(x) replace_na(x, 9999))) |> 
-  left_join(data_covariate, by = c("iso3c", "year"))
+treatment <- data_treatment |> 
+  select(iso3c, year, starts_with(c("dis", "cohort", "rel")), treat_first:treat_large_first_stag)
 
-## Country-Sector-Year
-data_sample_sect <- left_join(outcome_sect, treatment_iso_sample, by = c("iso3c", "year")) |> 
+data_sample <- left_join(data_unit, outcome, by = c("donor_id", "recipient_id", "year")) |> 
+  left_join(treatment, by = c("iso3c", "year")) |> 
+  mutate(id = paste(donor_id, recipient_id, sep = "_")) |> 
+  relocate(id, .before = year)
+
+est = data_sample |> 
+  select(year, id, donor_id, recipient_id, 
+         y.name = commit_total, 
+         g.name = cohort_dis_large, 
+         dis_large_dummy, 
+         time_to_treatment = rel_time_large) |> 
+  filter(year >= 2004) |> 
+  mutate(t = year - min(year) + 1) |> 
+  mutate(time_to_treatment = ifelse(time_to_treatment %in% -10:10, time_to_treatment, -1000)) |> 
+  mutate(y.name = ifelse(y.name < 0, 0, y.name)) |> 
+#  filter(time_to_treatment != -1000)
+  fepois(y.name ~ i(time_to_treatment, c(-1, -1000)) | id + year + donor_id^year + recipient_id[t])
+#  fepois(y.name ~ sunab(g.name, year) | id + year + donor_id^year + recipient_id[t])
+
+# install.packages("ggfixest")
+ggfixest::ggiplot(est) ## this package
+
+# varying slopes: fe1[x2]
+
   mutate(across(matches("^D_(L|H)"), \(x) replace_na(x, 0))) |> 
   mutate(across(matches("^cohort"), \(x) replace_na(x, 9999))) |> 
   left_join(data_covariate, by = c("iso3c", "year"))
@@ -123,6 +66,6 @@ data_sample_sect <- left_join(outcome_sect, treatment_iso_sample, by = c("iso3c"
 
 ```{r save}
 
-save(data_sample_iso, data_sample_iso_cat, data_sample_sect, 
+save(data_sample,
      file = here("data", "data_sample.RData"))
 ```

@@ -226,26 +226,30 @@ To help the analysis, I create a unique code variable using the most granular le
 # Create a copy of the data
 dt <- setDT(data_sector)
 
+# some missing data in 'channel_code' are labelled as zeroes
+# convert zeroes to NAs
+dt[channel_code == 0, channel_code := NA]
+
 # Rename columns
 setnames(dt, old = "parent_channel_code", new = "channel_parent_code")
 
 # Define the columns that match the pattern
-channel_cols <- grep("^channel.*name$", names(df), value = TRUE)
+channel_cols <- grep("^channel.*name$", names(dt), value = TRUE)
 
 # Harmonize style, replace "" by NA, and delete space before/after character string
-df[, (channel_cols) := lapply(.SD, function(x) na_if(str_squish(str_to_title(x)), "")),
+dt[, (channel_cols) := lapply(.SD, function(x) na_if(str_squish(str_to_title(x)), "")),
              .SDcols = channel_cols]
 
 # Create new variable channel_code_unique
-df[, channel_code_unique := fifelse(
+dt[, channel_code_unique := fifelse(
   rowSums(!is.na(.SD)) == 2,
   do.call(pmax, c(.SD, na.rm = TRUE)),
   NA_real_
 ), .SDcols = c("channel_code", "channel_parent_code")]
 
 # Relocate channel_code_unique after channel_parent_code
-data_channel = df |> relocate(channel_code_unique, .after = channel_parent_code)
-rm(df)
+data_channel = dt |> relocate(channel_code_unique, .after = channel_parent_code)
+rm(dt)
 ```
 
 I also create a variable `channel_level` to specify the level of the most disaggregated channel available.
@@ -318,6 +322,95 @@ data_channel_code |>
   gt()
 ```
 
+### Data imputation
+
+```{r}
+
+data_channel_imp <- data_channel_code |> 
+  mutate(channel_reported_name = str_to_lower(channel_reported_name),
+         channel_code_unique = case_when(
+# purpose_name=="Debt forgiveness (code:60020) -> channel_code_unique==10000          
+          purpose_code==60020 ~ 10000,
+# purpose_name=="General budget support-related aid" (code:51010) -> channel_code_unique==10000
+          purpose_code==51010 ~ 10000, 
+# channel_reported_name starts with "ministry of" or "federal ministry" -> channel_code_unique==12000
+          grepl("^ministry of|federal ministry", channel_reported_name) ~ 12000,
+# channel_reported_name includes "ministry of finance" or "ministries of finance" or "ministry of economy" -> channel_code_unique==12000
+          grepl("ministry of finance|ministries of finance|ministry of economy", channel_reported_name) ~ 12000,
+          .default = channel_code_unique
+         ))
+```
+
+```{r}
+#| eval: false
+
+data_crs |> 
+  filter(year %in% c(2004:2007), is.na(channel_code_unique)) |> 
+  mutate(report = fct(ifelse(!is.na(channel_reported_name), "Yes", "No"))) |> 
+  summarize(n = sum(usd_commitment_defl, na.rm = T), .by = report) |> 
+  mutate(total = sum(n)) |>
+  mutate(share = round(n / total * 100, 2)) |>
+  arrange(desc(n))
+# report        n    total share
+# 1    Yes 15822.51 29213.19 54.16
+# 2     No 13390.68 29213.19 45.84
+
+data_crs |> 
+  filter(year %in% c(2004:2007), is.na(channel_code_unique)) |> 
+  mutate(report = fct(ifelse(!is.na(channel_reported_name), "Yes", "No"))) |> 
+  filter(report=="No") |>
+  summarize(n = sum(usd_commitment_defl, na.rm = T), .by = aid_t) |> 
+  mutate(total = sum(n)) |>
+  mutate(share = round(n / total * 100, 2)) |>
+  arrange(desc(n))
+# F01 3233.9612 13390.68 24.15
+# A02  573.2544 13390.68  4.28
+
+data_crs |> 
+  filter(year %in% c(2004:2007), is.na(channel_code_unique)) |> 
+  mutate(report = fct(ifelse(!is.na(channel_reported_name), "Yes", "No"))) |> 
+  filter(report=="No") |>
+  summarize(n = sum(usd_commitment_defl, na.rm = T), .by = c(report, aid_t) |> 
+  mutate(total = sum(n)) |>
+  mutate(share = round(n / total * 100, 2)) |>
+  arrange(desc(n))
+```
+
+> Note: complete data imputation rules, based on sector-purpose (e.g. action related to debt) and channel reported name.
+
+### Categories
+
+```{r}
+data_cat <- data_channel_imp
+```
+
+
+#### Modalities
+
+```{r data_mod}
+
+# define categories
+debt_mod = c('F01')
+budget_mod = c('A01', 'A02')
+core_mod = c('B01', 'B02')
+pooled_mod = c('B03', 'B031', 'B032', 'B033', 'B04')
+project_mod = c('C01', 'D02')
+
+# create variable
+data_mod <- data_cat |> 
+  mutate(flow_modality = fct(case_when(
+    aid_t %in% debt_mod | purpose_code %in% debt_purp ~ "Debt relief",
+    aid_t %in% budget_mod | purpose_code %in% budget_purp ~ "Budget support",
+    aid_t %in% core_mod ~ "Core contributions",
+    aid_t %in% pooled_mod ~ "Pooled funding",
+    aid_t %in% project_mod ~ "Project-type interventions and Other technical assistance",
+    .default = "Other"
+  ))) |> 
+  relocate(flow_modality, .after = aid_t)
+```
+
+#### Channels
+
 I create two new binary variables for State and non-State channel categories.
 
 > To do: create additional binary variables for channels sub-categories.
@@ -333,13 +426,14 @@ channel_nonstate = c(20000:63000)
 # channel_other = 90000
 
 # create variable
-data_channel_state <- data_channel_code |> 
+data_chan <- data_mod |> 
   mutate(
     channel_state = fct(case_when(
       channel_parent_code_2024 %in% channel_state ~"State",
       channel_parent_code_2024 %in% channel_nonstate ~"non-State",
       .default = "Other"
     ))) |> 
+  mutate(channel_state = fct_relevel(channel_state, "Other", after = Inf)) |> 
   relocate(channel_state, .after = channel_name_2024)
 ```
 
@@ -347,36 +441,12 @@ data_channel_state <- data_channel_code |>
 
 > To do (2): further data cleaning to reduce missingness.
 
-## Co-operation modalities
-
-```{r data_mod}
-
-# define categories
-debt_mod = c('F01')
-budget_mod = c('A01', 'A02')
-core_mod = c('B01', 'B02')
-pooled_mod = c('B03', 'B031', 'B032', 'B033', 'B04')
-project_mod = c('C01', 'D02')
-
-# create variable
-data_mod <- data_channel_state |> 
-  mutate(flow_modality = fct(case_when(
-    aid_t %in% debt_mod | purpose_code %in% debt_purp ~ "Debt relief",
-    aid_t %in% budget_mod | purpose_code %in% budget_purp ~ "Budget support",
-    aid_t %in% core_mod ~ "Core contributions",
-    aid_t %in% pooled_mod ~ "Pooled funding",
-    aid_t %in% project_mod ~ "Project-type interventions and Other technical assistance",
-    .default = "Other"
-  ))) |> 
-  relocate(flow_modality, .after = aid_t)
-```
-
 ## Cohorts
 
 ```{r data_cohort}
 
 # create variables
-data_cohort <- data_mod |>    
+data_cohort <- data_chan |>    
   mutate(cohort_donor = min(year), .by = donor_id) |>    
   mutate(cohort_recipient = min(year), .by = recipient_id)
 ```
@@ -395,25 +465,35 @@ save(data_crs, delivery_crs_code,
 
 ```{r data_iso3c}
 
-# list recipient iso3c
+## iso3c
 data_iso3c <- data_crs |> 
   select(country = recipient_name, iso3c) |> 
   unique() |> 
   arrange(country)
 
-# save
-save(data_iso3c,
-     file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\outcome\\data_iso3c.RData")
+## donor-recipient-year
+year <- 2001:2018
 
-# list donor, recipient, and year list
-data_unit_outcome <- data_crs |> 
+data_unit <- data_crs |> 
+  select(donor_id, donor_name, cohort_donor,
+         recipient_id, recipient_name, iso3c, cohort_recipient) |> 
   expand(nesting(donor_id, donor_name, cohort_donor), # donor
          nesting(recipient_id, recipient_name, iso3c, cohort_recipient), # recipient
          year) |> # year
   arrange(recipient_name)
 
-# save
-save(data_unit_outcome,
-     file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\outcome\\data_unit_outcome.RData")
+## donor-recipient-hum
+data_unit_hum <- data_crs |> 
+  select(donor_id, donor_name, cohort_donor,
+         recipient_id, recipient_name, iso3c, cohort_recipient,
+         sector_hum) |>  
+  expand(nesting(donor_id, donor_name, cohort_donor), # donor
+         nesting(recipient_id, recipient_name, iso3c, cohort_recipient), # recipient
+         sector_hum,
+         year) |> # year
+  arrange(recipient_name)
 
+## save
+save(data_iso3c, data_unit, data_unit_hum,
+     file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\outcome\\data_unit.RData")
 ```

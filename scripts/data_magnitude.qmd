@@ -468,7 +468,7 @@ Only keep OECD CRS recipient countries
 ```{r}
 
 # load list recipient iso3c
-load(file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\outcome\\data_iso3c.RData")
+load(file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\outcome\\data_unit.RData")
 
 # filter out iso3c not included in OECD CRS data
 data_emdat_short <- data_emdat_short[data_emdat_short$iso3c %in% data_iso3c$iso3c, ]
@@ -597,7 +597,7 @@ data_severity <- filter(merged_df, !(disaster_type_gdis == "extreme temperature"
 save(data_severity, file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\treatment\\data_severity.RData")
 ```
 
-### Relative time to disaster year
+### Within-ADM variation
 
 ```{r}
 
