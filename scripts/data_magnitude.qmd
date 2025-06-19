@@ -724,12 +724,6 @@ df |>
 lapply(dis_type, boxplot_value)
 ```
 
-```{r}
-
-
-```
-
-
 # Hazard exposure (E)
 
 ## Landscan (pop)
@@ -837,11 +831,11 @@ data_modis <- files |>
 
 Source: [link](https://modis-land.gsfc.nasa.gov/pdf/MCD12Q1_C6_Userguide04042018.pdf)
 
-- Croplands: 12
+-   Croplands: 12
 
-- Cropland/Natural Vegetation Mosaics: 14
+-   Cropland/Natural Vegetation Mosaics: 14
 
-- Urban and Built-up Lands: 13
+-   Urban and Built-up Lands: 13
 
 ```{r data_modis_short}
 

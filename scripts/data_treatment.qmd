@@ -18,6 +18,8 @@ load(here("data", "data_magnitude.RData"))
 
 ## Sample
 
+### All climate-related events
+
 ```{r data_treat}
 
 # select baseline indices and percentile
@@ -62,6 +64,8 @@ data_treat <- left_join(data_unit, data_dis, by = c("iso3c", "year")) |>
     dis_large_dummy = ifelse(freq_adm_large>0, 1, 0)
   )
 ```
+
+### Fast-onset and slow-onset climate-related events
 
 ```{r data_treat_fast.slow}
 
@@ -130,6 +134,8 @@ panelview(1 ~ dis_large_dummy, data = data_treat,
 # NOTE: non-absorbing and multiple (with switching on/off) treatment
 ```
 
+## Share of treated countries by year
+
 ```{r treat.freq}
 
 ## Proportions by year 
@@ -156,7 +162,8 @@ summarize(data_treat,
 summarize(data_treat, 
           prop_treat = mean(dis_dummy),
           prop_no_treat = 1 - mean(dis_dummy),
-            .by = iso3c)
+            .by = iso3c) |> 
+  arrange(desc(prop_treat))
 ```
 
 ## Treatment assignment
@@ -213,7 +220,7 @@ data_first <- data_cohort |>
 # short-term: 0-4 years
 # medium/long-term 5-10 years
 
-data_first |> 
+data_first <- data_first |> 
   mutate(
 # relative time to first-treatment    
     rel_time = year - cohort_dis,
@@ -226,8 +233,6 @@ data_first |>
     treat_first_large_short = ifelse(rel_time_large %in% 0:4, 1, 0),
     treat_first_large_long = ifelse(rel_time_large %in% 5:10, 1, 0)
   )
-
-
 ```
 
 ### Cumulative staggered
@@ -277,8 +282,10 @@ map(treat.vars, \(x) {
 
 ## Save
 
-```{r}
+```{r data_treatment}
 
-save(
+data_treatment <- data_first
+
+save(data_treatment,
      file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\treatment\\data_treatment.RData")
 ```

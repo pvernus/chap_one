@@ -224,10 +224,10 @@ To help the analysis, I create a unique code variable using the most granular le
 ```{r data_channel}
 
 # Create a copy of the data
-df <- copy(data_sector)
+dt <- setDT(data_sector)
 
 # Rename columns
-setnames(df, old = "parent_channel_code", new = "channel_parent_code")
+setnames(dt, old = "parent_channel_code", new = "channel_parent_code")
 
 # Define the columns that match the pattern
 channel_cols <- grep("^channel.*name$", names(df), value = TRUE)
