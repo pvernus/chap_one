@@ -326,6 +326,53 @@ data_channel_code |>
 
 ```{r}
 
+# missing channel by year
+data_channel_code |> 
+  summarize(
+    total_amount = sum(usd_commitment_defl, na.rm = T),
+    na_amount = sum(usd_commitment_defl[is.na(channel_code_unique)], na.rm = T),
+    .by = year) |> 
+  mutate(share_na = round(na_amount / total_amount * 100, 2))
+
+# NOTE: years < 2008 have the higher proportions of missing channels
+  
+  data_channel_code |> 
+   summarize(
+    total_amount = sum(usd_commitment_defl, na.rm = T),
+    na_amount = sum(usd_commitment_defl[is.na(channel_code_unique)], na.rm = T),
+    .by = c(sector_name, sector_code)) |> 
+  mutate(share_na = round(na_amount / total_amount * 100, 2)) |> 
+    arrange(desc(share_na))
+  
+  # NOTE: Action Relating to Debt:600 (34.5%) and GBS:510 (19%) > 50% of missing channel
+  
+  data_channel_code |> 
+    filter(is.na(channel_code_unique)) |> 
+    mutate(rep = ifelse(is.na(channel_reported_name), 1, 0)) |> 
+    summarize(amount = sum(usd_commitment_defl, na.rm = T), .by = rep) |> 
+    mutate(total_amount=sum(amount)) |> 
+    mutate(share=amount/total_amount)
+  
+# NOTE: a quarter of missing channel have a reported channel name
+
+  data_channel_code |> 
+#    filter(year < 2008) |>  
+    filter(is.na(channel_code_unique)) |> 
+    mutate(na = ifelse( 
+      is.na(channel_reported_name) & !sector_code %in% c(600, 510),
+      1, 0)) |> 
+    summarize(amount = sum(usd_commitment_defl, na.rm = T), .by = na) |> 
+    mutate(total_amount=sum(amount)) |> 
+    mutate(share=amount/total_amount)
+  
+# NOTE: more than half of the missing channel could potentially by solved
+# (1) imputation rules related to Action related to Debt and General Budget Support
+# (2) imputation algorithm to link channel reported name to a unique channel code
+# This proportion is even higher for early years
+```
+
+```{r}
+
 data_channel_imp <- data_channel_code |> 
   mutate(channel_reported_name = str_to_lower(channel_reported_name),
          channel_code_unique = case_when(
