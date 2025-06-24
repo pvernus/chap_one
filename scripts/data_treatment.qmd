@@ -46,7 +46,9 @@ data_dis <- df |>
     freq_adm = length(unique(geo_id)),
     freq_adm_large = sum(severe_large),
     value_avg = mean(value),
+    value_max = max(value),
     value_large = mean(value[severe_large == 1], na.rm = TRUE),
+    value_large_max = max(value[severe_large == 1], na.rm = TRUE),
     .by = c("iso3c", "year")
   ) |> 
   replace_na(list(value_large = 0))
@@ -88,14 +90,16 @@ process_data <- function(df) {
       freq_adm = length(unique(geo_id)),
       freq_adm_large = sum(severe_large),
       value_avg = mean(value),
+      value_max = max(value),
       value_large = mean(value[severe_large == 1], na.rm = TRUE),
+      value_large_max = max(value[severe_large == 1], na.rm = TRUE),
       .by = c("iso3c", "year")
     ) |>
     replace_na(list(value_large = 0))
 }
 
 # List of dataframes
-df_list <- list(df_fast = df_fast, df_slow = df_slow)
+df_list <- list(df_fast, df_slow)
 
 # Process each dataframe using purrr::map
 data_treat_list <- map(df_list, ~ {
@@ -230,12 +234,23 @@ panelview(1 ~ treat_large_first_stag, data = data_first,
           )
 ```
 
-
 ```{r label_vars}
 
 # Label new variables
 # labelled::var_label() <- list( = "")
 ```
+
+#### Treatment mean
+
+```{r}
+#| eval: false
+
+mutate(data_first,
+       treatment_first_stag_mean = mean(treatment_first_stag,na.rm = TRUE), 
+       treat_large_first_stag_mean = 
+       .by = "iso3c")
+```
+
 
 ### Relative time since first treatment
 

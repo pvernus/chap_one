@@ -18,7 +18,7 @@ load(here('data', 'data_oecd_crs_clean.RData'))
 load(here('data', 'data_emdat_clean.RData'))
 
 # World Development Indicators (WBG)
-wdi_data <- readxl::read_excel(here("source", "covariates", "country_level", "wdi", "P_Data_Extract_From_World_Development_Indicators.xlsx")) |> 
+wdi_data <- readxl::read_excel("C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\source\\covariate\\country_level\\wdi\\P_Data_Extract_From_World_Development_Indicators.xlsx") |> 
   janitor::clean_names() |> 
   pivot_longer(cols = contains("yr"), names_to = "year", values_to = "value") |> 
   mutate(year = as.numeric(str_sub(year, -4, -1)),
@@ -29,29 +29,15 @@ wdi_data$iso3c <- countrycode(sourcevar = wdi_data$country_name,
                              destination = "iso3c",
                              warn = T)
 wdi_data$iso3c <- ifelse(wdi_data$country_name=="Kosovo", wdi_data$iso3c=="XXK", wdi_data$iso3c)
+
+# UN Population
+unpop_data <- read_csv("C:/Users/pauvernu/Seafile/library/chap_one_data/source/covariate/country_level/un_wpp/unpopulation_dataportal_20250623182110.csv") |> 
+  janitor::clean_names() |>
+  select(country = location, iso3c = iso3, year = time, pop = value)
 ```
 
 ```{r data_covs}
-
-data_covs <- data_crs[!grepl("regional", data_crs$recipient_name), ]
-```
-
-```{r unit}
-
-unit <- data_covs |> 
-  expand(year, recipient_name) |> 
-  mutate(iso3c = countrycode(sourcevar = recipient_name,
-                             origin = "country.name",
-                             destination = "iso3c",
-                             warn = T))
-
-unit <- unit |> 
-  mutate(iso3c = case_when(
-    recipient_name=="Micronesia" ~ "FSM",
-    recipient_name=="Kosovo" ~ "XXK",
-    .default = iso3c
-  )) |> 
-  select(-recipient_name)
+data_covs <- copy(data_crs)
 ```
 
 # **Time-varying**
@@ -64,35 +50,10 @@ unit <- unit |>
 
 data_gdp <- wdi_data |> 
   filter(series_name=="GDP, PPP (constant 2021 international $)") |> 
-  dplyr::select(iso3c, year, gdp = value) |> 
-  mutate(gdp_2003 = ifelse(is.na(gdp), NA, gdp[year==2003]),
-         gdp_0307 = ifelse(is.na(gdp), NA, 
-                           (gdp[year==2007]-gdp[year==2003])/gdp[year==2003]),
-         .by = iso3c)
+  dplyr::select(iso3c, year, gdp = value)
 
 labelled::var_label(data_gdp) <- list(
-  gdp = "GDP, PPP (constant 2021 international $)",
-  gdp_2003 = "GDP, PPP (constant 2021 international $), 2003",
-  gdp_0307 = "Change in GDP, PPP (constant 2021 international $), 2003-2007"
-)
-```
-
-### GDP per capita
-
-```{r gdp.pc_data}
-
-data_gdp.pc <- wdi_data |> 
-  filter(series_name=="GDP per capita, PPP (constant 2021 international $)") |> 
-  dplyr::select(iso3c, year, gdp.pc = value) |> 
-  mutate(gdp.pc_2003 = ifelse(is.na(gdp.pc), NA, gdp.pc[year==2003]),
-         gdp.pc_0307 = ifelse(is.na(gdp.pc), NA, 
-                              (gdp.pc[year==2007]-gdp.pc[year==2003])/gdp.pc[year==2003]),
-         .by = iso3c)
-
-labelled::var_label(data_gdp.pc) <- list(
-  gdp.pc = "GDP per capita, PPP (constant 2021 international $)",
-  gdp.pc_2003 = "GDP per capita, PPP (constant 2021 international $), 2003",
-  gdp.pc_0307 = "Change in GDP per capita, PPP (constant 2021 international $), 2003-2007"
+  gdp = "GDP, PPP (constant 2021 international $)"
 )
 ```
 
@@ -100,17 +61,10 @@ labelled::var_label(data_gdp.pc) <- list(
 
 ```{r pop_data}
 
-data_pop <- wdi_data |> 
-  filter(series_name=="Population, total") |> 
-  dplyr::select(iso3c, year, pop = value) |> 
-  mutate(pop_2003 = ifelse(is.na(pop), NA, pop[year==2003]),
-         pop_0307 = ifelse(is.na(pop), NA, (pop[year==2007]-pop[year==2003])/pop[year==2003]),
-         .by = iso3c)
+data_pop <- unpop_data |> select(-country)
 
 labelled::var_label(data_pop) <- list(
-  pop = "Population, total",
-  pop_2003 = "Population, total, 2003",
-  pop_0307 = "Change in population, total, 2003-2007"
+  pop = "Population, total"
 )
 ```
 
@@ -224,97 +178,41 @@ data_req <- data_req |>
 ```{r cov_region}
 
 data_region <-  data_covs |>    
-  distinct(recipient_name, region_code, region_name) |> 
+  distinct(iso3c, region_code, region_name) |> 
   mutate(region_agg = case_when(
     region_name %in% c("North of Sahara", "South of Sahara") ~ "Africa",
     region_name %in% c("Caribbean & Central America", "South America") ~ "LAC",
     region_name %in% c("South & Central Asia", "Far East Asia") ~ "Asia",
     .default = region_name
   ))
-
-data_region$iso3c <- countrycode(sourcevar = data_region$recipient_name,
-                             origin = "country.name",
-                             destination = "iso3c",
-                             warn = T)
- 
-data_region <- data_region |> 
-  mutate(iso3c = case_when(
-    recipient_name=="Micronesia" ~ "FSM",
-    recipient_name=="Kosovo" ~ "XXK",
-    .default = iso3c
-  )) |> 
-  relocate(iso3c, .before = region_code) |> 
-  dplyr::select(-recipient_name)
 ```
 
 #### *Income groups*
 
 ```{r cov_incgp}
 
-# data source: https://datahelpdesk.worldbank.org/knowledgebase/articles/906519-world-bank-country-and-lending-groups  
-wdi_incgp <- readxl::read_excel(here("source", "covariates", "country_level", "wbg_incgp", "OGHIST.xlsx"),     
-                                sheet = "Country Analytical History",      
-                                skip = 3) |>    
-  rename(iso3 = 1, country_name = 2) |>    
-  filter(!is.na(iso3)) |>    
-  select(iso3, country_name, contains(c("y0", "y1", "y2"))) |>    
-  rename_with(~ paste0("20", substr(., 3, 4)), -c(iso3, country_name)) |>    
-  pivot_longer(cols = -c(iso3, country_name), names_to = "year", values_to = "inc_gp") |>    
-  mutate(year = as.integer(year),          
-         inc_gp = na_if(inc_gp, "..")) |>    
-  as.data.frame()
-
-## Time-invariant
-# create two variables: inc. gp in 2003 and in 2007 (start/end pre-treat window)
-data_incgp_pre <- wdi_incgp |> 
-  summarize(
-    inc_gp_03 = inc_gp[year == 2003],
-    inc_gp_07 = inc_gp[year == 2007],
-    .by = country_name
-  )
-
-# Add unit variable
-data_incgp_pre$iso3c <- countrycode(sourcevar = data_incgp_pre[, "country_name"],              
-                               origin = "country.name",             
-                               destination = "iso3c",             
-                               warn = T)
-
-data_incgp_pre <- data_incgp_pre |>    
-  mutate(iso3c = ifelse(country_name=="Kosovo", iso3c == "XKX", iso3c)) |>    
-  relocate(iso3c, .after = country_name) |> 
-  dplyr::select(-country_name)
-
-## Time varying
-data_incgp <- wdi_incgp
-data_incgp$iso3c <- countrycode(sourcevar = wdi_incgp[, "country_name"],              
-                               origin = "country.name",             
-                               destination = "iso3c",             
-                               warn = T)
-
-data_incgp <- data_incgp |>    
-  mutate(iso3c = ifelse(country_name=="Kosovo", iso3c == "XKX", iso3c)) |>    
-  relocate(iso3c, .after = country_name) |> 
-  dplyr::select(-c(iso3, country_name))
+data_incgp <- data_covs |>    
+  distinct(iso3c, incomegroup_code, incomegroup_name) |> 
+  arrange(iso3c)
 ```
 
-```{r}
+```{r data_covariate}
 
-data_covariate <- unit |> 
-  left_join(data_gdp, by = c("year", "iso3c")) |> 
-  left_join(data_gdp.pc, by = c("year", "iso3c")) |>
+data_covariate <- data_iso3c_year |> 
+#  left_join(data_gdp, by = c("year", "iso3c")) |> 
+#  left_join(data_gdp.pc, by = c("year", "iso3c")) |>
   left_join(data_pop, by = c("year", "iso3c")) |>
-  left_join(data_clim_shock, by = "iso3c") |> 
-  left_join(data_req, by = c("year", "iso3c")) |> 
-  left_join(data_incgp_pre, by = "iso3c") |>
-  left_join(data_incgp, by = c("year", "iso3c")) |>
+#  left_join(data_clim_shock, by = "iso3c") |> 
+#  left_join(data_req, by = c("year", "iso3c")) |> 
+#  left_join(data_incgp_pre, by = "iso3c") |>
+  left_join(data_incgp, by = "iso3c") |>
   left_join(data_region, by = "iso3c") |> 
-  mutate(across(drought_0307:sto_dummy_0307, \(x) replace_na(x, 0))) |> 
-  mutate(across(decla_dummy:ofda_bha_dummy, \(x) replace_na(x, 0))) |> 
+#  mutate(across(drought_0307:sto_dummy_0307, \(x) replace_na(x, 0))) |> 
+#  mutate(across(decla_dummy:ofda_bha_dummy, \(x) replace_na(x, 0))) |> 
   arrange(iso3c, year)
-
 ```
 
 ```{r}
 
-save(data_covariate, file = here("data", "data_covariate.RData"))
+save(data_covariate, file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\covariate\\data_covariate.RData")
 ```

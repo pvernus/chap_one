@@ -4,8 +4,6 @@ format: html
 editor: visual
 ---
 
-# Outcome
-
 ```{r load}
 
 # load packages
@@ -16,17 +14,11 @@ source(here::here('scripts', 'library.R'))
 load("C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\outcome\\data_crs.RData")
 ```
 
-## Quantity
-
--   Commitments in constant dollars
-
--   Share of total commitments (%)
-
 > **To do**: consider disbursements.
 
-### Missing
+# Missing
 
-#### Modality
+## Modality
 
 ```{r na_modality}
 
@@ -34,9 +26,9 @@ load("C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\outcome\\data_
 data_crs |> 
   group_by(year) |> 
   summarize(
-    total_amount = sum(usd_commitment_defl, na.rm = T),
-    na_amount = sum(usd_commitment_defl[is.na(aid_t)], na.rm = T),
-    other_amount = sum(usd_commitment_defl[flow_modality=='Other'], na.rm = T)
+    total_amount = sum(usd_commitment_defl_censored, na.rm = T),
+    na_amount = sum(usd_commitment_defl_censored[is.na(aid_t)], na.rm = T),
+    other_amount = sum(usd_commitment_defl_censored[flow_modality=='Other'], na.rm = T)
     ) |> 
   mutate(
     share_na = round(na_amount / total_amount * 100, 2),
@@ -44,7 +36,7 @@ data_crs |>
     )
 ```
 
-#### Channel
+## Channel
 
 ```{r na_channel}
 
@@ -52,8 +44,8 @@ data_crs |>
 data_crs |> 
   group_by(year) |> 
   summarize(
-    total_amount = sum(usd_commitment_defl, na.rm = T),
-    na_amount = sum(usd_commitment_defl[is.na(channel_code_unique)], na.rm = T)) |> 
+    total_amount = sum(usd_commitment_defl_censored, na.rm = T),
+    na_amount = sum(usd_commitment_defl_censored[is.na(channel_code_unique)], na.rm = T)) |> 
   mutate(share_na = round(na_amount / total_amount * 100, 2))
 
 # NOTE: missing data concentrate between 2004 and 2007  
@@ -62,7 +54,7 @@ data_crs |>
 # group by purpose
 data_crs |> 
   filter(year %in% c(2004:2007), is.na(channel_code_unique)) |> 
-  summarize(n = sum(usd_commitment_defl, na.rm = T), .by = c(purpose_code, purpose_name)) |> 
+  summarize(n = sum(usd_commitment_defl_censored, na.rm = T), .by = c(purpose_code, purpose_name)) |> 
   mutate(total = sum(n)) |>
   mutate(share = round(n / total * 100, 2)) |>
   arrange(desc(n))
@@ -72,7 +64,7 @@ data_crs |>
 # group by recipient
 data_crs |> 
   filter(year %in% c(2004:2007), is.na(channel_code_unique)) |> 
-  summarize(n = sum(usd_commitment_defl, na.rm = T), .by = recipient_name) |> 
+  summarize(n = sum(usd_commitment_defl_censored, na.rm = T), .by = recipient_name) |> 
   mutate(total = sum(n)) |>
   mutate(share = round(n / total * 100, 2)) |>
   arrange(desc(n))
@@ -82,7 +74,7 @@ data_crs |>
 # by purpose and recipient
 data_crs |> 
   filter(year %in% c(2004:2007), is.na(channel_code_unique)) |> 
-  summarize(n = sum(usd_commitment_defl, na.rm = T), .by = c(purpose_name, recipient_name)) |> 
+  summarize(n = sum(usd_commitment_defl_censored, na.rm = T), .by = c(purpose_name, recipient_name)) |> 
   mutate(total = sum(n)) |>
   mutate(share = round(n / total * 100, 2)) |>
   arrange(desc(n))
@@ -91,13 +83,13 @@ data_crs |>
 
 ```
 
-### Cross-tables
+## Cross-tables
 
 ```{r cross-table}
 
 data_crs |> 
   group_by(flow_modality, channel_state) |> 
-  summarize(total_amount = sum(usd_commitment_defl, na.rm = T), .groups = 'drop') |> 
+  summarize(total_amount = sum(usd_commitment_defl_censored, na.rm = T), .groups = 'drop') |> 
   mutate(share_of_total = total_amount / sum(total_amount) * 100, .by = flow_modality) |> 
   arrange(flow_modality, desc(share_of_total))
 
@@ -105,14 +97,14 @@ data_crs |>
 # modality
 data_crs |> 
   group_by(sector_hum, flow_modality) |> 
-  summarize(total_amount = sum(usd_commitment_defl, na.rm = T), .groups = 'drop') |> 
+  summarize(total_amount = sum(usd_commitment_defl_censored, na.rm = T), .groups = 'drop') |> 
   mutate(share_of_total = total_amount / sum(total_amount) * 100, 
          .by = sector_hum) |> 
   arrange(sector_hum, desc(share_of_total))
 # channel
 data_crs |> 
   group_by(sector_hum, channel_state) |> 
-  summarize(total_amount = sum(usd_commitment_defl, na.rm = T), .groups = 'drop') |> 
+  summarize(total_amount = sum(usd_commitment_defl_censored, na.rm = T), .groups = 'drop') |> 
   mutate(share_of_total = total_amount / sum(total_amount) * 100, 
          .by = sector_hum) |> 
   arrange(sector_hum, desc(share_of_total))
@@ -121,7 +113,7 @@ data_crs |>
 # modality
 data_crs |> 
   group_by(sector_multi, flow_modality) |> 
-  summarize(total_amount = sum(usd_commitment_defl, na.rm = T), .groups = 'drop') |> 
+  summarize(total_amount = sum(usd_commitment_defl_censored, na.rm = T), .groups = 'drop') |> 
   ungroup() |> 
   group_by(sector_multi) |> 
   mutate(share_of_total = round(total_amount / sum(total_amount) * 100, 2)) |> 
@@ -129,7 +121,7 @@ data_crs |>
 # channel
 data_crs |> 
   group_by(sector_multi, channel_state) |> 
-  summarize(total_amount = sum(usd_commitment_defl, na.rm = T), .groups = 'drop') |> 
+  summarize(total_amount = sum(usd_commitment_defl_censored, na.rm = T), .groups = 'drop') |> 
   ungroup() |> 
   group_by(sector_multi) |> 
   mutate(share_of_total = round(total_amount / sum(total_amount) * 100, 2)) |> 
@@ -141,7 +133,7 @@ data_crs |>
 ```{r}
 
 prop(xtabs(
-  usd_commitment_defl ~ flow_modality + channel_state,
+  usd_commitment_defl_censored ~ flow_modality + channel_state,
   data = data_crs,
   na.action = na.omit
 ))
@@ -153,71 +145,129 @@ prop(xtabs(
 ))
 ```
 
-## Variables
+# Variables
 
--   **Quantity**
+## Commitments
 
-```{r quantity}
+### Overall
+
+```{r commit_vars}
 
 ## define the unit-specific quantity
 quantity_outcome <- data_crs |> 
 # commitments in constant USD  
   summarize(
   # total  
-    commit_total = sum(usd_commitment_defl, na.rm = T),
+    commit_total = sum(usd_commitment_defl_censored, na.rm = T),
   # co-operation modalities
-    commit_budg = sum(usd_commitment_defl[as.integer(flow_modality)==1], na.rm = T),
-    commit_proj = sum(usd_commitment_defl[as.integer(flow_modality)==2], na.rm = T),   
+    commit_budg = sum(usd_commitment_defl_censored[as.integer(flow_modality)==1], na.rm = T),
+    commit_proj = sum(usd_commitment_defl_censored[as.integer(flow_modality)==2], na.rm = T),   
   # channels of delivery 
-    commit_state = sum(usd_commitment_defl[as.integer(channel_state)==1], na.rm = T),
-    commit_nonstate = sum(usd_commitment_defl[as.integer(channel_state)==2], na.rm = T),
+    commit_state = sum(usd_commitment_defl_censored[as.integer(channel_state)==1], na.rm = T),
+    commit_nonstate = sum(usd_commitment_defl_censored[as.integer(channel_state)==2], na.rm = T),
 .by = c(donor_id, recipient_id, year)
 ) |> 
-# proportions of total commitments in constant USD  
-  mutate(
-  # co-operation modalities
-    sh_budg = ifelse(commit_total>0, commit_budg/commit_total, 0),
-    sh_proj =  ifelse(commit_total>0, commit_proj/commit_total, 0),
-  # channels of delivery 
-    sh_state = ifelse(commit_total>0, commit_state/commit_total, 0),
-    sh_nonstate = ifelse(commit_total>0, commit_nonstate/commit_total, 0),
-  )
+  arrange(donor_id, recipient_id)
 ```
 
-```{r quantity_outcome_hum}
+### Sector
+
+```{r commit_vars_hum}
 
 ## define the unit-specific quantity
 quantity_outcome_hum <- data_crs |> 
 # commitments in constant USD  
   summarize(
   # total  
-    commit_total = sum(usd_commitment_defl, na.rm = T),
+    commit_total = sum(usd_commitment_defl_censored, na.rm = T),
   # co-operation modalities
-    commit_budg = sum(usd_commitment_defl[as.integer(flow_modality)==1], na.rm = T),
-    commit_proj = sum(usd_commitment_defl[as.integer(flow_modality)==2], na.rm = T),   
+    commit_budg = sum(usd_commitment_defl_censored[as.integer(flow_modality)==1], na.rm = T),
+    commit_proj = sum(usd_commitment_defl_censored[as.integer(flow_modality)==2], na.rm = T),   
   # channels of delivery 
-    commit_state = sum(usd_commitment_defl[as.integer(channel_state)==1], na.rm = T),
-    commit_nonstate = sum(usd_commitment_defl[as.integer(channel_state)==2], na.rm = T),
+    commit_state = sum(usd_commitment_defl_censored[as.integer(channel_state)==1], na.rm = T),
+    commit_nonstate = sum(usd_commitment_defl_censored[as.integer(channel_state)==2], na.rm = T),
 .by = c(donor_id, recipient_id, sector_hum, year)
-) |> 
-# proportions of total commitments in constant USD  
-  mutate(
-  # co-operation modalities
-    sh_budg = ifelse(commit_total>0, commit_budg/commit_total, 0),
-    sh_proj =  ifelse(commit_total>0, commit_proj/commit_total, 0),
-  # channels of delivery 
-    sh_state = ifelse(commit_total>0, commit_state/commit_total, 0),
-    sh_nonstate = ifelse(commit_total>0, commit_nonstate/commit_total, 0),
-  ) |> 
+) |>
   arrange(donor_id, recipient_id)
+
 ```
 
-> For the proportions, how to deal with negative commitments? 
+> For the proportions, how to deal with negative commitments?
+
+### Zeroes and small values
+
+#### Zeroes
+
+```{r commit_zero}
+
+# Create categories
+df.zero <- quantity_outcome |> 
+  mutate(category = fct(case_when(
+    commit_total == 0 ~ "0",
+    commit_total > 0 & commit_total <= 0.001 ~ "]0, 0.001]",
+    commit_total > 0.001 & commit_total <= 0.01 ~ "]0.001, 0.01]",
+    commit_total > 0.01 & commit_total <= 0.1 ~ "]0.01, 0.1]",
+    commit_total > 0.1 & commit_total < 1 ~ "]0.1, 1[",
+    TRUE ~ "[1, Inf]"
+  ), levels = c("0", "]0, 0.001]", "]0.001, 0.01]", "]0.01, 0.1]", "]0.1, 1[", "[1, Inf]")))
+
+# Calculate fractions
+fractions <- df.zero |> 
+  group_by(category) |> 
+  summarise(fraction = n() / nrow(df.zero))
+
+# Bar plot
+ggplot(fractions, aes(x = category, y = fraction)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Around 80% of obs. are zeroes",
+       subtitle = "Total commitments",
+       x = "Commitments (USD, in million)",
+       y = "Fraction of Obs.") +
+  theme_minimal()
+```
+
+#### Small values
+
+```{r commit_small}
+
+# Create categories
+df.small <- quantity_outcome |> 
+  filter(commit_total > 0) |> 
+  mutate(category = fct(case_when(
+    commit_total > 0 & commit_total <= 0.001 ~ "]0, 0.001]",
+    commit_total > 0.001 & commit_total <= 0.01 ~ "]0.001, 0.01]",
+    commit_total > 0.01 & commit_total <= 0.1 ~ "]0.01, 0.1]",
+    commit_total > 0.1 & commit_total < 1 ~ "]0.1, 1[",
+    TRUE ~ "[1, Inf]"
+  ), levels = c("]0, 0.001]", "]0.001, 0.01]", "]0.01, 0.1]", "]0.1, 1[", "[1, Inf]")))
+
+# Calculate fractions
+fractions <- df.small |> 
+  group_by(category) |> 
+  summarise(fraction = n() / nrow(df.small))
+
+# Bar plot
+ggplot(fractions, aes(x = category, y = fraction)) +
+  geom_bar(stat = "identity") +
+  labs(title = "More than 40% of non-zero values range below 1 million USD",
+       subtitle = "Total commitments",
+       x = "Commitments (USD, in million)",
+       y = "Fraction of Obs.") +
+  theme_minimal()
+```
+
+> Threshold: 0.001 (one thousand USD) or 0.01 (ten thousand USD)?
+
+```{r commit_zero_threshold}
+
+mutate(quantity_outcome, across(starts_with("commit"), ~ ifelse(.x < 0.001, 0, .x)))
+mutate(quantity_outcome_hum, across(starts_with("commit"), ~ ifelse(.x < 0.001, 0, .x)))
+
+```
 
 ## Units of observation
 
 ```{r data_unit_outcome}
-
 load(file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\outcome\\data_unit.RData")
 ```
 
@@ -238,7 +288,8 @@ Following Faye and Niehaus (2012) and Arezki et al. (2025), I adopt a dyadic app
 -   Faye and Niehaus (2012) and Arezki et al. (2025) don't include multilateral donors, for different reasons. However, I don't see real restriction on including them in the analysis if I use dyad-level FEs.
 
 ```{r}
-# donors 
+
+# donors
 length(unique(data_crs$donor_id))
 # recipients
 length(unique(data_crs$recipient_id))
@@ -257,16 +308,15 @@ length(unique(data_crs$donor_id)) * length(unique(data_crs$recipient_id)) * leng
 ```{r outcome}
 
 ## merge outcome data
+
+# donor-recipient
 data_outcome <- merge(data_unit, quantity_outcome, 
                  by=c("donor_id", "recipient_id", "year"), all.x = TRUE) |> 
 # treat "true" zeros: NA if country's registration in OECD CRS > current period
   mutate(across(starts_with("commit_"), ~ ifelse(
     is.na(.x) & (cohort_donor <= year | cohort_recipient <= year), 0, .x)))
-```
 
-```{r outcome_hum}
-
-## merge outcome data
+# donor-recipient-sector
 data_outcome_hum <- merge(data_unit_hum, quantity_outcome_hum, 
                  by=c("donor_id", "recipient_id", "sector_hum", "year"), all.x = TRUE) |> 
 # treat "true" zeros: NA if country's registration in OECD CRS > current period
@@ -274,15 +324,59 @@ data_outcome_hum <- merge(data_unit_hum, quantity_outcome_hum,
     is.na(.x) & (cohort_donor <= year | cohort_recipient <= year), 0, .x)))
 ```
 
-> **To do**: consider alternative definitions of nonzero outcomes, based on (i) rounding (ex: at 0.001 MUSD unit) and (ii) by including a threshold (ex: \>= 1 000 USD).
+## Proportions of total
 
--   **Duplicates**
+```{r share}
 
-```{r outcome_dupes}
+list <- list(data_outcome, data_outcome_hum) |> 
+  map(\(x) 
+ # proportions of total commitments in constant USD  
+  mutate(x, 
+  # co-operation modalities
+    sh_budg = ifelse((commit_total&commit_budg)>0, commit_budg/commit_total, 0),
+    sh_proj =  ifelse((commit_total&commit_proj)>0, commit_proj/commit_total, 0),
+  # channels of delivery 
+    sh_state = ifelse((commit_total&commit_state)>0, commit_state/commit_total, 0),
+    sh_nonstate = ifelse((commit_total&commit_nonstate)>0, commit_nonstate/commit_total, 0)
+  )) |> 
+  setNames(c("share", "share_hum"))
 
-janitor::get_dupes(data_outcome, donor_id, recipient_id, year)
-janitor::get_dupes(data_outcome_hum, donor_id, recipient_id, sector_hum, year)
+data_outcome <- list$share
+data_outcome_hum <- list$share_hum
 ```
+
+## Per capita
+
+```{r per_capita}
+#| eval: false
+
+load(file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\covariate\\data_covariate.RData")
+
+list <- list(data_outcome, data_outcome_hum) |> 
+  map(\(x) left_join(x, data_pop, by = c("iso3c", "year")) |> 
+        mutate(across(commit_total:commit_nonstate, ~ .x / population, .names = "{.col}_pc"))
+  ) |> 
+  setNames(c("pc", "pc_num"))
+
+data_outcome <- list$pc
+data_outcome_hum <- list$pc_num
+```
+
+## Extensive
+
+```{r}
+
+list <- list(data_outcome, data_outcome_hum) |> 
+  map(\(x) mutate(x, across(commit_total:commit_nonstate, ~ ifelse(.x > 0, 1, 0), 
+                            .names = "{.col}_dummy")
+                  )) |> 
+  setNames(c("ext", "ext_hum"))
+
+data_outcome <- list$ext
+data_outcome_hum <- list$ext_hum
+```
+
+> Robustness check: .x > 1 (exclude small commitments)
 
 # Appendix
 

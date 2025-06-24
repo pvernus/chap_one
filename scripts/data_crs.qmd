@@ -165,6 +165,19 @@ save(data_crs_clean,
 
 # Data transformation
 
+## Negative values
+
+```{r}
+
+data_censored <- data_crs_clean |> 
+  mutate(
+    usd_commitment_defl_censored = ifelse(usd_commitment_defl >= 0, usd_commitment_defl, 0),
+    usd_disbursement_defl_censored = ifelse(usd_disbursement_defl >= 0, usd_disbursement_defl, 0)
+  ) |> 
+  relocate(usd_commitment_defl_censored, .after = usd_commitment_defl) |> 
+  relocate(usd_disbursement_defl_censored, .after = usd_disbursement_defl)
+```
+
 ## Sectors
 
 ```{r data_sector}
@@ -183,7 +196,7 @@ inkind_purp = c(52010:53040)
 debt_purp = c(60010:60063)
 
 # create variables 
-data_sector <- data_crs_clean |>    
+data_sector <- data_censored |>    
   mutate(     
     sector_hum = fct(case_when(       
       purpose_code %in% humanitarian_purp ~ "Humanitarian",       
@@ -325,12 +338,13 @@ data_channel_code |>
 ### Data imputation
 
 ```{r}
+#| eval: false
 
 # missing channel by year
 data_channel_code |> 
   summarize(
-    total_amount = sum(usd_commitment_defl, na.rm = T),
-    na_amount = sum(usd_commitment_defl[is.na(channel_code_unique)], na.rm = T),
+    total_amount = sum(usd_commitment_defl_censored, na.rm = T),
+    na_amount = sum(usd_commitment_defl_censored[is.na(channel_code_unique)], na.rm = T),
     .by = year) |> 
   mutate(share_na = round(na_amount / total_amount * 100, 2))
 
@@ -338,8 +352,8 @@ data_channel_code |>
   
   data_channel_code |> 
    summarize(
-    total_amount = sum(usd_commitment_defl, na.rm = T),
-    na_amount = sum(usd_commitment_defl[is.na(channel_code_unique)], na.rm = T),
+    total_amount = sum(usd_commitment_defl_censored, na.rm = T),
+    na_amount = sum(usd_commitment_defl_censored[is.na(channel_code_unique)], na.rm = T),
     .by = c(sector_name, sector_code)) |> 
   mutate(share_na = round(na_amount / total_amount * 100, 2)) |> 
     arrange(desc(share_na))
@@ -349,7 +363,7 @@ data_channel_code |>
   data_channel_code |> 
     filter(is.na(channel_code_unique)) |> 
     mutate(rep = ifelse(is.na(channel_reported_name), 1, 0)) |> 
-    summarize(amount = sum(usd_commitment_defl, na.rm = T), .by = rep) |> 
+    summarize(amount = sum(usd_commitment_defl_censored, na.rm = T), .by = rep) |> 
     mutate(total_amount=sum(amount)) |> 
     mutate(share=amount/total_amount)
   
@@ -361,7 +375,7 @@ data_channel_code |>
     mutate(na = ifelse( 
       is.na(channel_reported_name) & !sector_code %in% c(600, 510),
       1, 0)) |> 
-    summarize(amount = sum(usd_commitment_defl, na.rm = T), .by = na) |> 
+    summarize(amount = sum(usd_commitment_defl_censored, na.rm = T), .by = na) |> 
     mutate(total_amount=sum(amount)) |> 
     mutate(share=amount/total_amount)
   
@@ -394,7 +408,7 @@ data_channel_imp <- data_channel_code |>
 data_crs |> 
   filter(year %in% c(2004:2007), is.na(channel_code_unique)) |> 
   mutate(report = fct(ifelse(!is.na(channel_reported_name), "Yes", "No"))) |> 
-  summarize(n = sum(usd_commitment_defl, na.rm = T), .by = report) |> 
+  summarize(n = sum(usd_commitment_defl_censored, na.rm = T), .by = report) |> 
   mutate(total = sum(n)) |>
   mutate(share = round(n / total * 100, 2)) |>
   arrange(desc(n))
@@ -406,7 +420,7 @@ data_crs |>
   filter(year %in% c(2004:2007), is.na(channel_code_unique)) |> 
   mutate(report = fct(ifelse(!is.na(channel_reported_name), "Yes", "No"))) |> 
   filter(report=="No") |>
-  summarize(n = sum(usd_commitment_defl, na.rm = T), .by = aid_t) |> 
+  summarize(n = sum(usd_commitment_defl_censored, na.rm = T), .by = aid_t) |> 
   mutate(total = sum(n)) |>
   mutate(share = round(n / total * 100, 2)) |>
   arrange(desc(n))
@@ -417,7 +431,7 @@ data_crs |>
   filter(year %in% c(2004:2007), is.na(channel_code_unique)) |> 
   mutate(report = fct(ifelse(!is.na(channel_reported_name), "Yes", "No"))) |> 
   filter(report=="No") |>
-  summarize(n = sum(usd_commitment_defl, na.rm = T), .by = c(report, aid_t) |> 
+  summarize(n = sum(usd_commitment_defl_censored, na.rm = T), .by = c(report, aid_t)) |> 
   mutate(total = sum(n)) |>
   mutate(share = round(n / total * 100, 2)) |>
   arrange(desc(n))
@@ -426,11 +440,6 @@ data_crs |>
 > Note: complete data imputation rules, based on sector-purpose (e.g. action related to debt) and channel reported name.
 
 ### Categories
-
-```{r}
-data_cat <- data_channel_imp
-```
-
 
 #### Modalities
 
@@ -443,8 +452,10 @@ core_mod = c('B01', 'B02')
 pooled_mod = c('B03', 'B031', 'B032', 'B033', 'B04')
 project_mod = c('C01', 'D02')
 
+data_mod <- data_channel_imp
+
 # create variable
-data_mod <- data_cat |> 
+data_mod <- data_mod |> 
   mutate(flow_modality = fct(case_when(
     aid_t %in% debt_mod | purpose_code %in% debt_purp ~ "Debt relief",
     aid_t %in% budget_mod | purpose_code %in% budget_purp ~ "Budget support",
@@ -512,15 +523,21 @@ save(data_crs, delivery_crs_code,
 
 ```{r data_iso3c}
 
-## iso3c
+## recipient
 data_iso3c <- data_crs |> 
   select(country = recipient_name, iso3c) |> 
   unique() |> 
   arrange(country)
 
-## donor-recipient-year
+## recipient-year
 year <- 2001:2018
 
+data_iso3c_year <- data_crs |> 
+  select(country = recipient_name, iso3c) |> 
+  expand(nesting(country, iso3c), year) |> 
+  arrange(country)
+
+## donor-recipient-year
 data_unit <- data_crs |> 
   select(donor_id, donor_name, cohort_donor,
          recipient_id, recipient_name, iso3c, cohort_recipient) |> 
@@ -541,6 +558,6 @@ data_unit_hum <- data_crs |>
   arrange(recipient_name)
 
 ## save
-save(data_iso3c, data_unit, data_unit_hum,
+save(data_iso3c, data_iso3c_year, data_unit, data_unit_hum,
      file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\outcome\\data_unit.RData")
 ```

@@ -1,0 +1,323 @@
+---
+title: "Analysis"
+format: html
+---
+
+```{r df}
+
+df = data_sample |> 
+  # observation window
+  filter(year >= 2004) |> 
+  # remove always-treated
+  filter(cohort_dis != 2001) |> 
+  # time trend
+  mutate(t = year - min(year) + 1) |> 
+  # treated vs. never-treated
+  mutate(treatment_mean = mean(treat_first_stag, na.rm = TRUE), .by = "iso3c") |> 
+  mutate(treat = as.numeric(treatment_mean>0))
+```
+
+```{r df.sect}
+
+df.sect <- data_sample_hum |> 
+  # observation window
+  filter(year >= 2004) |> 
+  # remove always-treated
+  filter(cohort_dis != 2001) |> 
+  # time trend
+  mutate(t = year - min(year) + 1) |> 
+  # treated vs. never-treated
+  mutate(treatment_mean = mean(treat_first_stag, na.rm = TRUE), .by = "iso3c") |> 
+  mutate(treat = as.numeric(treatment_mean>0))
+```
+
+## Goodman-Bacon Decomposition
+
+```{r}
+
+data.complete <- df[which((df$cohort_recipient<=2004 | df$cohort_donor<=2004)),] # bacon requires no missingness in the data
+
+df_bacon <- bacondecomp::bacon(commit_total~treat_first_stag,
+                  data = data.complete,
+                  id_var = "id",
+                  time_var = "year")
+# plot
+ggplot(df_bacon) +
+   aes(x = weight, y = estimate, shape = factor(type), color = factor(type)) +
+   labs(x = "Weight", y = "Estimate", shape = "Type", color = 'Type') +
+   geom_point()
+
+print(aggregate(df_bacon$estimate * df_bacon$weight, 
+                list(df_bacon$type), FUN=sum))
+```
+
+## Overall
+
+```{r pois}
+
+# define sample
+df.pois <- df |> 
+  select(year, id, donor_id, recipient_id, 
+         y.name = commit_total, 
+         rel_time, t,
+         treat,
+         region_agg) |> 
+  mutate(time_to_treatment = case_when(
+      rel_time <= -10 ~ -10,
+      rel_time >= 10 ~ 10,
+      .default = rel_time
+    ))
+
+# run model
+res.pois = fepois(
+  y.name ~ i(time_to_treatment, treat, -1) | id + year + donor_id^year + recipient_id[t],
+  cluster = ~id,
+  data = df.pois)
+
+# plot
+ggfixest::ggiplot(res.pois, ci_level = c(0.8, 0.95),
+                  main = "Effect on overall commitments")
+
+```
+
+```{r}
+
+ggplot(df.pois, aes(x=time_to_treatment)) +
+  geom_histogram()
+```
+
+```{r}
+
+# alternative model
+ res.pois = fepois(
+   y.name ~ i(time_to_treatment, treat, -1) | id + year + region_agg + recipient_id[t],
+  cluster = ~id,
+  data = df.pois)
+
+# plot
+ggfixest::ggiplot(res.pois, ci_level = c(0.8, 0.95),
+                  main = "Effect on overall commitments")
+```
+
+```{r pois.sect}
+
+# define sample
+df.pois.sect <- df.sect |> 
+  select(year, id, donor_id, recipient_id, sector = sector_hum,
+         y.name = commit_total, 
+         rel_time, t,
+         treat,
+         region_agg) |> 
+  mutate(time_to_treatment = case_when(
+      rel_time <= -10 ~ -10,
+      rel_time >= 10 ~ 10,
+      .default = rel_time
+    ))
+
+# run model
+res.pois.sect = fepois(
+  y.name ~ i(time_to_treatment, treat, -1) | id + year + donor_id^year + recipient_id[t],
+  cluster = ~id,
+  split = ~sector,
+  data = df.pois.sect)
+
+# plot
+ggfixest::ggiplot(res.pois.sect, ci_level = c(0.8, 0.95),
+                  multi_style = "facet",
+                  main = "Effect on overall commitments")
+
+```
+
+### Extensive margin
+
+```{r glm}
+
+# define sample
+df.glm <- df |> 
+  select(year, id, donor_id, recipient_id, 
+         y.name = commit_total_dummy,
+         rel_time, t,
+         treat,
+         region_agg) |> 
+    mutate(time_to_treatment = case_when(
+      rel_time <= -10 ~ -10,
+      rel_time >= 10 ~ 10,
+      .default = rel_time
+    ))
+
+# run model
+res.glm = feglm(family = "binomial",
+  y.name ~ i(time_to_treatment, treat, -1) | id + year + donor_id^year + recipient_id[t],
+  cluster = ~id,
+  data = df.glm)
+
+# plot
+ggfixest::ggiplot(res.glm, main = "Extensive margin effect on overall commitments")
+```
+
+```{r glm.sect}
+
+# define sample
+df.glm.sect <- df.sect |> 
+  select(year, id, donor_id, recipient_id, sector = sector_hum,
+         y.name = commit_total_dummy,
+         rel_time, t,
+         treat,
+         region_agg) |> 
+    mutate(time_to_treatment = case_when(
+      rel_time <= -10 ~ -10,
+      rel_time >= 10 ~ 10,
+      .default = rel_time
+    ))
+
+# run model
+res.glm.sect = feglm(family = binomial(link = "logit"),
+  y.name ~ i(time_to_treatment, treat, -1) | id + year + donor_id^year + recipient_id[t],
+  cluster = ~id,
+  split = ~sector,
+  data = df.glm.sect)
+
+# plot
+ggfixest::ggiplot(res.glm.sect, ci_level = c(0.8, 0.95),
+                  multi_style = "facet",
+                  main = "Extensive margin effect on overall commitments")
+```
+
+## Design
+
+```{r pois.design}
+
+# define sample
+df.pois.design <- df |> 
+  select(year, id, donor_id, recipient_id, 
+         commit_budg, commit_proj,
+         rel_time, t,
+         treat,
+         region_agg) |> 
+    mutate(time_to_treatment = case_when(
+      rel_time <= -10 ~ -10,
+      rel_time >= 10 ~ 10,
+      .default = rel_time
+    ))
+
+# run model
+res.pois.design = fepois(
+  c(commit_budg, commit_proj) ~ 
+  i(time_to_treatment, treat, -1) | id + year + donor_id^year + recipient_id[t],
+  cluster = ~id,
+  data = df.pois.design)
+
+# plot
+ggfixest::ggiplot(res.pois.design, multi_style = "facet", main = "Effect on aid design (USD)")
+
+```
+
+```{r ols.design}
+
+# define sample
+df.ols.design <- df |> 
+  select(year, id, donor_id, recipient_id, 
+         budget = sh_budg, project = sh_proj,
+         rel_time, t,
+         treat,
+         region_agg) |> 
+    mutate(time_to_treatment = case_when(
+      rel_time <= -10 ~ -10,
+      rel_time >= 10 ~ 10,
+      .default = rel_time
+    ))
+
+# run model
+res.ols.design = feols(
+  c(budget, project) ~ 
+  i(time_to_treatment, treat, -1) | id + year + donor_id^year + recipient_id[t],
+  cluster = ~id,
+  data = df.ols.design)
+
+# plot
+ggfixest::ggiplot(res.ols.design, multi_style = "facet", main = "Effect on aid design (%)")
+
+```
+
+```{r pois.design.sect}
+
+df.pois.design.sect <- df.sect |> 
+  select(year, id, donor_id, recipient_id, sector = sector_hum,
+         commit_budg, commit_proj,
+         rel_time, t,
+         treat,
+         region_agg) |> 
+    mutate(time_to_treatment = case_when(
+      rel_time <= -10 ~ -10,
+      rel_time >= 10 ~ 10,
+      .default = rel_time
+    ))
+
+# run model
+res.pois.design.sect = fepois(
+  c(commit_budg, commit_proj) ~ 
+  i(time_to_treatment, treat, -1) | id + year,
+  cluster = ~id,
+  split = ~sector,
+  data = df.pois.design.sect)
+
+# plot
+ggfixest::ggiplot(res.pois.design.sect, 
+                  multi_style = "facet", 
+                  main = "Effect on aid design (USD)")
+
+```
+
+## Implementation
+
+```{r pois.implementation}
+
+# define sample
+df.pois.implementation <- df |> 
+  select(year, id, donor_id, recipient_id, 
+         state = commit_state, nonstate = commit_nonstate,
+         rel_time, t,
+         treat,
+         region_agg) |> 
+    mutate(time_to_treatment = case_when(
+      rel_time <= -10 ~ -10,
+      rel_time >= 10 ~ 10,
+      .default = rel_time
+    ))
+
+# run model
+res.pois.implementation = fepois(
+  c(state, nonstate) ~ i(time_to_treatment, treat, -1) | id + year + region_agg + recipient_id[t],
+  cluster = ~donor_id^recipient_id,
+  data = df.pois.implementation)
+
+# plot
+ggfixest::ggiplot(res.pois.implementation, multi_style = "facet", main = "Effect on aid implementation")
+```
+
+```{r ols.implementation}
+
+# define sample
+df.ols.implementation <- df |> 
+  select(year, id, donor_id, recipient_id, 
+         state = sh_state, nonstate = sh_nonstate,
+         rel_time, t,
+         treat,
+         region_agg) |> 
+    mutate(time_to_treatment = case_when(
+      rel_time <= -10 ~ -10,
+      rel_time >= 10 ~ 10,
+      .default = rel_time
+    ))
+
+# run model
+res.ols.implementation = feols(
+  c(state, nonstate) ~ 
+  i(time_to_treatment, treat, -1) | id + year + region_agg,
+  cluster = ~id,
+  data = df.ols.implementation)
+
+# plot
+ggfixest::ggiplot(res.ols.implementation, multi_style = "facet", main = "Effect on aid implementation (%)")
+
+```

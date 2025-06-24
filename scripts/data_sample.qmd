@@ -17,6 +17,7 @@ load(file =  "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\outcom
 # treatment
 load(file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\treatment\\data_treatment.RData")
 # covariates
+load(file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\covariate\\data_covariate.RData")
 # load(here('data', 'data_covariate.RData'))
 ```
 
@@ -29,43 +30,46 @@ load(file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\treatme
 ```{r sample_data}
 
 outcome <- data_outcome |> 
-  select(donor_id, recipient_id, year, starts_with("commit"))
+  select(donor_id, recipient_id, year, starts_with("commit"), starts_with("sh"))
 
 treatment <- data_treatment |> 
-  select(iso3c, year, starts_with(c("dis", "cohort", "rel")), treat_first:treat_large_first_stag)
+  select(iso3c, year, treat_first_stag, cohort_dis, rel_time)
 
-data_sample <- left_join(data_unit, outcome, by = c("donor_id", "recipient_id", "year")) |> 
+covariate <- data_covariate |> 
+  select(iso3c, year, incomegroup_name, region_agg)
+
+data_sample <- left_join(
+  # merge outcome sample
+  data_unit, outcome, by = c("donor_id", "recipient_id", "year")) |> 
+  # merge treatment sample
   left_join(treatment, by = c("iso3c", "year")) |> 
+  # merge covariate sample
+  left_join(covariate, by = c("iso3c", "year")) |> 
   mutate(id = paste(donor_id, recipient_id, sep = "_")) |> 
   relocate(id, .before = year)
-
-est = data_sample |> 
-  select(year, id, donor_id, recipient_id, 
-         y.name = commit_total, 
-         g.name = cohort_dis_large, 
-         dis_large_dummy, 
-         time_to_treatment = rel_time_large) |> 
-  filter(year >= 2004) |> 
-  mutate(t = year - min(year) + 1) |> 
-  mutate(time_to_treatment = ifelse(time_to_treatment %in% -10:10, time_to_treatment, -1000)) |> 
-  mutate(y.name = ifelse(y.name < 0, 0, y.name)) |> 
-#  filter(time_to_treatment != -1000)
-  fepois(y.name ~ i(time_to_treatment, c(-1, -1000)) | id + year + donor_id^year + recipient_id[t])
-#  fepois(y.name ~ sunab(g.name, year) | id + year + donor_id^year + recipient_id[t])
-
-# install.packages("ggfixest")
-ggfixest::ggiplot(est) ## this package
-
-# varying slopes: fe1[x2]
-
-  mutate(across(matches("^D_(L|H)"), \(x) replace_na(x, 0))) |> 
-  mutate(across(matches("^cohort"), \(x) replace_na(x, 9999))) |> 
-  left_join(data_covariate, by = c("iso3c", "year"))
-
 ```
+
+```{r}
+
+outcome_hum <- data_outcome_hum |> 
+  select(donor_id, recipient_id, sector_hum, year, starts_with("commit"), starts_with("sh"))
+
+data_sample_hum <- left_join(
+  # merge outcome sample
+  data_unit_hum, outcome_hum, by = c("donor_id", "recipient_id", "sector_hum", "year")) |> 
+  filter(sector_hum != "Other") |> 
+  # merge treatment sample
+  left_join(treatment, by = c("iso3c", "year")) |> 
+  # merge covariate sample
+  left_join(covariate, by = c("iso3c", "year")) |> 
+  mutate(id = paste(donor_id, recipient_id, sep = "_")) |> 
+  relocate(id, .before = year)
+```
+
+# Save
 
 ```{r save}
 
-save(data_sample,
-     file = here("data", "data_sample.RData"))
+save(data_sample, data_sample_hum,
+     file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\data_sample.RData")
 ```
