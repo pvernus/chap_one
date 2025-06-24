@@ -21,15 +21,23 @@ data_magnitude <- data_severity
 
 ## Sample
 
-### All climate-related events
-
-```{r data_treat}
+```{r}
 
 # select baseline indices and percentile
 indice_base <- c("rx1d", "rx90d", "tmax1d", "wmean1d")
 percentile_base <- c("p5", "p95")
 year_base <- 2001:2018
 
+# define event types
+## onset
+fast_onset <- c("flood", "storm")
+slow_onset <- c("drought", "extreme temperature")
+## physical
+hydro <- "flood"
+meteo <- "storm"
+clim <- c("drought", "extreme temperature")
+
+# define indice parameters
 df <- data_magnitude |>
 # filter indice and percentile  
   filter(indice %in% indice_base) |> 
@@ -39,83 +47,181 @@ df <- data_magnitude |>
 # filter disaster year only
   filter(year==year_dis)
 
-# aggregate at country-year level
-data_dis <- df |> 
+```
+
+```{r density_disaster_type}
+#| eval: false
+
+ggplot(df, aes(x=value, group=disaster_type_gdis)) +
+  geom_density(aes(fill=disaster_type_gdis), alpha=.6) +
+  facet_wrap(~disaster_type_gdis) + 
+  theme_light()
+```
+
+### All
+
+```{r}
+
+df.dis <- df |> 
   summarize(
-    freq_dis = length(unique(disasterno)),
-    freq_adm = length(unique(geo_id)),
-    freq_adm_large = sum(severe_large),
-    value_avg = mean(value),
-    value_max = max(value),
-    value_large = mean(value[severe_large == 1], na.rm = TRUE),
-    value_large_max = max(value[severe_large == 1], na.rm = TRUE),
+    # frequency
+    freq_dis = length(unique(disasterno)), # disaster
+    freq_adm = length(unique(geo_id)), # ADM-affected by disaster
+    # agg severity index at country-year level
+    value_max = max(value, na.rm = T),
+    value_sum = sum(value, na.rm = T),    
+    .by = c("iso3c", "year")
+  )
+```
+
+### Speed onset
+
+```{r}
+
+# aggregate at country-year level
+df.dis.onset <- df |> 
+  summarize(
+    ## freq. by onset event type
+    freq_dis_fast = length(unique(disasterno[disaster_type_gdis %in% fast_onset])), # fast-onset
+    freq_adm_fast = length(unique(geo_id[disaster_type_gdis %in% fast_onset])),
+    freq_dis_slow = length(unique(disasterno[disaster_type_gdis %in% slow_onset])), # slow_onset
+    freq_adm_slow = length(unique(geo_id[disaster_type_gdis %in% slow_onset])),
+    ## index by onset event type
+    value_max_fast = max(value[disaster_type_gdis %in% fast_onset], na.rm = T), # fast-onset
+    value_sum_fast = sum(value[disaster_type_gdis %in% fast_onset], na.rm = T),
+    value_max_slow = max(value[disaster_type_gdis %in% slow_onset], na.rm = T), # slow-onset
+    value_sum_slow = sum(value[disaster_type_gdis %in% slow_onset], na.rm = T),
     .by = c("iso3c", "year")
   ) |> 
-  replace_na(list(value_large = 0))
+  mutate(across(starts_with("value"), ~ if_else(. == -Inf | . == 0, NA_real_, .)))
+```
+
+### Physical chars
+
+```{r data_treat}
+
+# aggregate at country-year level
+df.dis.phy <- df |> 
+  summarize(
+    ## freq. by physical event type
+    freq_dis_hydro = length(unique(disasterno[disaster_type_gdis %in% hydro])), # hydro
+    freq_adm_hydro = length(unique(geo_id[disaster_type_gdis %in% hydro])),
+    freq_dis_meteo = length(unique(disasterno[disaster_type_gdis %in% meteo])), # meteo
+    freq_adm_meteo = length(unique(geo_id[disaster_type_gdis %in% meteo])),
+    freq_dis_clim = length(unique(disasterno[disaster_type_gdis %in% clim])), # clim
+    freq_adm_clim = length(unique(geo_id[disaster_type_gdis %in% clim])),
+    ## index by physical event type
+    value_max_hydro = max(value[disaster_type_gdis %in% hydro], na.rm = T), # hydro
+    value_sum_hydro = sum(value[disaster_type_gdis %in% hydro], na.rm = T),
+    value_max_meteo = max(value[disaster_type_gdis %in% meteo], na.rm = T), # meteo
+    value_sum_meteo = sum(value[disaster_type_gdis %in% meteo], na.rm = T),
+    value_max_clim = max(value[disaster_type_gdis %in% clim], na.rm = T), # clim
+    value_sum_clim = sum(value[disaster_type_gdis %in% clim], na.rm = T),
+    .by = c("iso3c", "year")
+  ) |> 
+  mutate(across(starts_with("value"), ~ if_else(. == -Inf | . == 0, NA_real_, .)))
+
+```
+
+### Merge
+
+```{r data_treat}
 
 # load list recipient iso3c
 load(file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\outcome\\data_unit.RData")
 
-# define unit and time sample
-data_unit <- data_iso3c |> 
-  expand(iso3c, year_base) |> 
-  rename(year = year_base)
-
 # merge treatment vars to sample
-data_treat <- left_join(data_unit, data_dis, by = c("iso3c", "year")) |> 
+data_treat <- left_join(data_iso3c_year, df.dis, by = c("iso3c", "year")) |> 
+  left_join(df.dis.onset, by = c("iso3c", "year")) |> 
+  left_join(df.dis.phy, by = c("iso3c", "year")) |>
   mutate_all(replace_na, 0) |> 
+  # create event-year dummies
   mutate(
+    # all
     dis_dummy = ifelse(freq_dis>0, 1, 0),
-    dis_large_dummy = ifelse(freq_adm_large>0, 1, 0)
-  )
+    # onset
+    dis_fast_dummy = ifelse(freq_dis_fast>0, 1, 0), 
+    dis_slow_dummy = ifelse(freq_dis_slow>0, 1, 0),
+    # physical
+    dis_hydro_dummy = ifelse(freq_dis_hydro>0, 1, 0), 
+    dis_meteo_dummy = ifelse(freq_dis_meteo>0, 1, 0), 
+    dis_clim_dummy = ifelse(freq_dis_clim>0, 1, 0)
+    )
 ```
 
-### Fast-onset and slow-onset climate-related events
+## Rank
 
-```{r data_treat_fast.slow}
+```{r rank}
 
-fast_onset <- c("flood", "storm")
-slow_onset <- c("drought", "extreme temperature")
+data_treat |> 
+  select(iso3c, year, freq_dis, value_max) |> 
+#  filter(freq_dis>0) |> 
+  ggplot(aes(x = value_max, group = year)) +
+  geom_density(alpha=.6) +
+  facet_wrap(~ year)
 
-# fast-onset
-df_fast <- filter(df, disaster_type_gdis %in% fast_onset)
-# slow-onset
-df_slow <- filter(df, disaster_type_gdis %in% slow_onset)
+quantile(data_treat$value_max[data_treat$freq_dis>0], probs = c(0, 0.25, 0.5, 0.75, 1))
+quantile(data_treat$value_max[data_treat$freq_dis>0], probs = c(0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1))
 
-# Define the processing function
-process_data <- function(df) {
-  df |>
-    summarize(
-      freq_dis = length(unique(disasterno)),
-      freq_adm = length(unique(geo_id)),
-      freq_adm_large = sum(severe_large),
-      value_avg = mean(value),
-      value_max = max(value),
-      value_large = mean(value[severe_large == 1], na.rm = TRUE),
-      value_large_max = max(value[severe_large == 1], na.rm = TRUE),
-      .by = c("iso3c", "year")
-    ) |>
-    replace_na(list(value_large = 0))
-}
+```
 
-# List of dataframes
-df_list <- list(df_fast, df_slow)
+### All
 
-# Process each dataframe using purrr::map
-data_treat_list <- map(df_list, ~ {
-  data_dis <- process_data(.x)
-  left_join(data_unit, data_dis, by = c("iso3c", "year")) |>
-    mutate_all(replace_na, 0) |>
-    mutate(
-      dis_dummy = ifelse(freq_dis > 0, 1, 0),
-      dis_large_dummy = ifelse(freq_adm_large > 0, 1, 0)
-    )
-})
+```{r df.rank}
 
-# Retrieve results
-data_treat_fast <- data_treat_list$df_fast
-data_treat_slow <- data_treat_list$df_slow
+df.rank <- data_treat |> 
+  select(iso3c, year, freq_dis, value_max) |> 
+  mutate(
+    quantile_rank = ntile(ifelse(freq_dis>0, value_max, NA_real_), 4),
+    decile_rank = ntile(ifelse(freq_dis>0, value_max, NA_real_), 10)
+    ) |> 
+  select(-c(starts_with("freq"), starts_with("value")))
+```
 
+### Speed onset
+
+```{r df.rank.onset}
+
+df.rank.onset <- data_treat |> 
+  select(iso3c, year, freq_dis_fast, freq_dis_slow, value_max_fast, value_max_slow) |> 
+  mutate(
+    # fast-onset
+    quantile_rank_fast = ntile(ifelse(freq_dis_fast>0, value_max_fast, NA_real_), 4),
+    decile_rank_fast = ntile(ifelse(freq_dis_fast>0, value_max_fast, NA_real_), 10),
+    # slow-onset
+    quantile_rank_slow = ntile(ifelse(freq_dis_slow>0, value_max_slow, NA_real_), 4),
+    decile_rank_slow = ntile(ifelse(freq_dis_slow>0, value_max_slow, NA_real_), 10), 
+    ) |> 
+  select(-c(starts_with("freq"), starts_with("value")))
+```
+
+### Physical chars
+
+```{r df.rank.phy}
+
+df.rank.phy <- data_treat |> 
+  select(iso3c, year, freq_dis_hydro, freq_dis_meteo, freq_dis_clim, value_max_hydro, value_max_meteo, value_max_clim) |> 
+  mutate(
+    # hydro
+    quantile_rank_hydro = ntile(ifelse(freq_dis_hydro>0, value_max_hydro, NA_real_), 4),
+    decile_rank_hydro = ntile(ifelse(freq_dis_hydro>0, value_max_hydro, NA_real_), 10),
+    # meteo
+    quantile_rank_meteo = ntile(ifelse(freq_dis_meteo>0, value_max_meteo, NA_real_), 4),
+    decile_rank_meteo = ntile(ifelse(freq_dis_meteo>0, value_max_meteo, NA_real_), 10),
+    # clim
+    quantile_rank_clim = ntile(ifelse(freq_dis_clim>0, value_max_clim, NA_real_), 4),
+    decile_rank_clim = ntile(ifelse(freq_dis_clim>0, value_max_clim, NA_real_), 10),    
+    ) |> 
+  select(-c(starts_with("freq"), starts_with("value")))
+```
+
+### Merge
+
+```{r}
+
+data_treat_rank <- left_join(data_iso3c_year, df.rank, by = c("iso3c", "year")) |> 
+  left_join(df.rank.onset, by = c("iso3c", "year")) |> 
+  left_join(df.rank.phy, by = c("iso3c", "year"))
 ```
 
 ## Treatment paths
@@ -179,38 +285,64 @@ Non-absorbing, staggered, multiple treatments (on-and-off).
 
 ### First-treatment staggered
 
+#### Cohorts
+
 ```{r data_cohort}
 
 # create cohort variable
-data_cohort <- data_treat |> 
-  mutate(
-    cohort_dis = ifelse(sum(dis_dummy) > 0, min(year[dis_dummy == 1]), 9999),
-    cohort_dis_large = ifelse(sum(dis_large_dummy) > 0, min(year[dis_large_dummy == 1]), 9999),
-      .by = iso3c
-    )
+## by event type 
+data_cohort_type <- data_treat |> 
+  select(iso3c, year, ends_with("dummy")) |> 
+  mutate(across(ends_with("dummy"), ~ ifelse(sum(.x) > 0, min(year[.x == 1]), 9999), .names = "cohort_{.col}"), 
+         .by = iso3c) |> 
+  rename_with(~ sub("_dummy$", "", .), starts_with("cohort")) |> 
+  select(iso3c, year, contains("cohort"))
 
-## frequency by cohort years
-# all events
-summarize(data_cohort,
-          freq_country = length(unique(iso3c)),
-          .by = cohort_dis) |> 
-  arrange(cohort_dis)
+## for top quantile/decile
+data_cohort_rank <- data_treat_rank |> 
+  mutate(across(starts_with("quantile"), ~ ifelse(.x==4, 1, 0), .names = "top_{.col}_dummy")) |> 
+  mutate(across(starts_with("decile"), ~ ifelse(.x==10, 1, 0), .names = "top_{.col}_dummy")) |> 
+  mutate(across(starts_with("top"), ~ ifelse(sum(.x, na.rm = T) > 0, min(year[.x == 1], na.rm = T), 9999), 
+                .names = "cohort_{.col}"),
+         .by = iso3c) |> 
+  rename_with(~ sub("_dummy$", "", sub("rank_", "", .)), starts_with("cohort")) |>
+  select(iso3c, year, contains("cohort"))
 
-# large events
-summarize(data_cohort,
-          freq_country = length(unique(iso3c)),
-          .by = cohort_dis_large
-          ) |> 
-  arrange(cohort_dis_large)
+# merge
+data_cohort <- left_join(data_cohort_type, data_cohort_rank, by = c("iso3c", "year"))
+```
+
+```{r}
+#| eval: false
+
+# retrieve cohort vars
+cohort_vars <- names(data_cohort)[startsWith(names(data_cohort), "cohort")]
+# Create a list to store the results
+results_list <- list()
+# Loop through each cohort variable and apply the summarize and arrange functions
+for (var in cohort_vars) {
+  result <- data_cohort |> 
+    summarize(freq_country = length(unique(iso3c)), .by = !!sym(var)) %>%
+    arrange(!!sym(var))
+
+  # Store the result in the list
+  results_list[[var]] <- result
+}
+# Print the results
+print(results_list)
+```
+
+#### Staggered binary vars
+
+```{r data_first}
 
 # create dummy vars first-treatment
 data_first <- data_cohort |> 
-  mutate(
-    treat_first = ifelse(year == cohort_dis, 1, 0),
-    treat_first_stag = ifelse(year >= cohort_dis, 1, 0),
-    treat_large_first = ifelse(year == cohort_dis_large, 1, 0),
-    treat_large_first_stag = ifelse(year >= cohort_dis_large, 1, 0)
-  )
+  mutate(across(starts_with("cohort"), ~ ifelse(year >= .x, 1, 0), 
+                .names = "first_treat_{.col}")) |> 
+  rename_with(~ sub("cohort_", "", .), starts_with("first_treat")) |> 
+  select(iso3c, year, contains("first_treat"))
+
 ```
 
 #### Treatment paths
@@ -247,32 +379,18 @@ panelview(1 ~ treat_large_first_stag, data = data_first,
 
 mutate(data_first,
        treatment_first_stag_mean = mean(treatment_first_stag,na.rm = TRUE), 
-       treat_large_first_stag_mean = 
        .by = "iso3c")
 ```
 
-
 ### Relative time since first treatment
 
-```{r}
+```{r data_rel_time}
 
-# cf. Deryugina, 2017
-# short-term: 0-4 years
-# medium/long-term 5-10 years
-
-data_first <- data_first |> 
-  mutate(
-# relative time to first-treatment    
-    rel_time = year - cohort_dis,
-    rel_time_large = year - cohort_dis_large,
-# binary treatment, short/long, all hazards 
-    treat_first_short = ifelse(rel_time %in% 0:4, 1, 0),
-    treat_first_long = ifelse(rel_time %in% 5:10, 1, 0),
-    treat_first_out = ifelse(!rel_time %in% 0:10, 1, 0),
-# binary treatment, short/long, large hazards 
-    treat_first_large_short = ifelse(rel_time_large %in% 0:4, 1, 0),
-    treat_first_large_long = ifelse(rel_time_large %in% 5:10, 1, 0)
-  )
+data_rel_time <- data_cohort|> 
+  mutate(across(starts_with("cohort"), ~ ifelse(.x %in% 2001:2018, year - .x, -1000), 
+                .names = "rel_time_{.col}")) |> 
+  rename_with(~ sub("cohort_", "", .), starts_with("rel_time")) |> 
+  select(iso3c, year, contains("rel_time"))
 ```
 
 ### Cumulative staggered
@@ -323,10 +441,8 @@ map(treat.vars, \(x) {
 
 ## Save
 
-```{r data_treatment}
+```{r save}
 
-data_treatment <- data_first
-
-save(data_treatment,
+save(data_first, data_cohort, data_rel_time,
      file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\treatment\\data_treatment.RData")
 ```
