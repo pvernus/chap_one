@@ -4,8 +4,6 @@ format: html
 editor: visual
 ---
 
-# Treatment
-
 ```{r load_pckg}
 
 source(here::here('scripts', 'library.R'))
@@ -15,13 +13,11 @@ source(here::here('scripts', 'library.R'))
 
 # load(here("data", "data_magnitude.RData"))
 load(file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\treatment\\data_severity.RData")
-
-data_magnitude <- data_severity
 ```
 
-## Sample
+# Sample
 
-```{r}
+```{r indice_event_type}
 
 # select baseline indices and percentile
 indice_base <- c("rx1d", "rx90d", "tmax1d", "wmean1d")
@@ -38,7 +34,7 @@ meteo <- "storm"
 clim <- c("drought", "extreme temperature")
 
 # define indice parameters
-df <- data_magnitude |>
+df <- data_severity |>
 # filter indice and percentile  
   filter(indice %in% indice_base) |> 
   filter(percentile %in% percentile_base) |> 
@@ -58,7 +54,7 @@ ggplot(df, aes(x=value, group=disaster_type_gdis)) +
   theme_light()
 ```
 
-### All
+## All
 
 ```{r}
 
@@ -74,7 +70,7 @@ df.dis <- df |>
   )
 ```
 
-### Speed onset
+## Speed onset
 
 ```{r}
 
@@ -96,7 +92,7 @@ df.dis.onset <- df |>
   mutate(across(starts_with("value"), ~ if_else(. == -Inf | . == 0, NA_real_, .)))
 ```
 
-### Physical chars
+## Physical chars
 
 ```{r data_treat}
 
@@ -123,7 +119,7 @@ df.dis.phy <- df |>
 
 ```
 
-### Merge
+## Merge
 
 ```{r data_treat}
 
@@ -149,7 +145,7 @@ data_treat <- left_join(data_iso3c_year, df.dis, by = c("iso3c", "year")) |>
     )
 ```
 
-## Rank
+# Rank (intensity)
 
 ```{r rank}
 
@@ -165,7 +161,7 @@ quantile(data_treat$value_max[data_treat$freq_dis>0], probs = c(0, 0.1, 0.2, 0.3
 
 ```
 
-### All
+## All
 
 ```{r df.rank}
 
@@ -178,7 +174,7 @@ df.rank <- data_treat |>
   select(-c(starts_with("freq"), starts_with("value")))
 ```
 
-### Speed onset
+## Speed onset
 
 ```{r df.rank.onset}
 
@@ -195,7 +191,7 @@ df.rank.onset <- data_treat |>
   select(-c(starts_with("freq"), starts_with("value")))
 ```
 
-### Physical chars
+## Physical chars
 
 ```{r df.rank.phy}
 
@@ -215,39 +211,88 @@ df.rank.phy <- data_treat |>
   select(-c(starts_with("freq"), starts_with("value")))
 ```
 
-### Merge
+## Merge
 
-```{r}
+```{r data_treat_rank}
 
 data_treat_rank <- left_join(data_iso3c_year, df.rank, by = c("iso3c", "year")) |> 
   left_join(df.rank.onset, by = c("iso3c", "year")) |> 
   left_join(df.rank.phy, by = c("iso3c", "year"))
 ```
 
+# Multiple treatments of identical intensities (binary) 
+
 ## Treatment paths
 
 ```{r treat.status}
 
+# All
 panelview(1 ~ dis_dummy, data = data_treat,           
           index = c("iso3c","year"),
           axis.lab = "time",
           by.timing = TRUE,                   
           background = "white",
-          main = "Treatment Status: All events"
+          main = "Treatment Status"
           )
 
-panelview(1 ~ dis_large_dummy, data = data_treat,           
-          index = c("iso3c","year"),
-          axis.lab = "time",
-          by.timing = TRUE,                   
-          background = "white",
-          main = "Treatment Status: Large events only"
-          )
+## Speed onset
+# Define the list of variables
+list_dis_onset <- list("dis_fast_dummy", "dis_slow_dummy")
+
+# Apply panelview to each variable in the list
+panelview_onset <- list_dis_onset |>
+  map(\(x) panelview(as.formula(paste("1 ~", x)), 
+                     data = data_treat,
+                     index = c("iso3c", "year"),
+                     axis.lab = "time",
+                     by.timing = TRUE,
+                     background = "white",
+                     main = "Treatment Status")
+      )
+
+## Physical chars
+# Define the list of variables
+list_dis_phy <- list("dis_hydro_dummy", "dis_meteo_dummy", "dis_clim_dummy")
+
+# Apply panelview to each variable in the list
+panelview_phy <- list_dis_phy |>
+  map(\(x) panelview(as.formula(paste("1 ~", x)), 
+                     data = data_treat,
+                     index = c("iso3c", "year"),
+                     axis.lab = "time",
+                     by.timing = TRUE,
+                     background = "white",
+                     main = "Treatment Status")
+      )
 
 # NOTE: non-absorbing and multiple (with switching on/off) treatment
 ```
 
-## Share of treated countries by year
+## Threshold effect window
+
+```{r rel_time_treshold_multiple}
+
+df <- select(data_treat, iso3c, year, ends_with("dummy")) |> 
+  pivot_longer(cols = -c(iso3c, year), names_to = "dis", values_to = "treat")
+
+df |> 
+  split(df$dis) |> 
+  map(\(df) get.cohort(data = as.data.frame(df), D = 'treat',index = c("iso3c","year"))) |> 
+  map(\(df) summarize(df, freq = n(), .by = "Time_to_Treatment") |> 
+        arrange(Time_to_Treatment) |> 
+        filter(!is.na(Time_to_Treatment)) |> 
+        mutate(prop = freq/max(freq)) |> 
+        ggplot(aes(x=Time_to_Treatment, y=prop)) +
+        geom_bar(stat = "identity", fill = "grey") +
+        geom_hline(yintercept = .3, linetype="dotted", colour="red") +
+        theme_minimal()
+        )
+
+# further customization: add text above hline ("threshold: .3") + fill different color bars above threshold.
+
+# following Liu, Wang, and Xu (2024), plot only those periods whose number of treated observations exceeds a threshold, which is set as a proportion of the largest number of treated observations in a period (the default is proportion = 0.3).
+
+```
 
 ```{r treat.freq}
 
@@ -267,7 +312,8 @@ summarize(data_treat,
        x = "Year",
        y = "%",
        fill = "Status") +
-  theme_minimal()
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
 # NOTE: declining proportions of treated countries in the last periods. Maybe due to reporting bias.
 
@@ -279,13 +325,9 @@ summarize(data_treat,
   arrange(desc(prop_treat))
 ```
 
-## Treatment assignment
+# Single treatments of identical intensities (first-treatment-and-staggerize)
 
-Non-absorbing, staggered, multiple treatments (on-and-off).
-
-### First-treatment staggered
-
-#### Cohorts
+## Cohorts
 
 ```{r data_cohort}
 
@@ -332,7 +374,7 @@ for (var in cohort_vars) {
 print(results_list)
 ```
 
-#### Staggered binary vars
+## Staggered binary vars
 
 ```{r data_first}
 
@@ -345,25 +387,49 @@ data_first <- data_cohort |>
 
 ```
 
-#### Treatment paths
+## Treatment paths
 
 ```{r}
+#| eval: false
 
-panelview(1 ~ treat_first_stag, data = data_first,           
-          index = c("iso3c","year"),
+## all
+panelview(data = data_first,
+          1 ~ first_treat_dis,
+          index = c("iso3c", "year"), 
           axis.lab = "time",
-          by.timing = TRUE,                   
+          by.timing = TRUE,
           background = "white",
-          main = "Treatment Status: All events"
-          )
+          main = "Treatment Status")
 
-panelview(1 ~ treat_large_first_stag, data = data_first,           
-          index = c("iso3c","year"),
-          axis.lab = "time",
-          by.timing = TRUE,                   
-          background = "white",
-          main = "Treatment Status: Large events only"
-          )
+## Speed onset
+# Define the list of variables
+list_first_onset <- list("first_treat_dis_fast", "first_treat_dis_slow")
+
+# Apply panelview to each variable in the list
+panelview_onset <- list_first_onset |>
+  map(\(x) panelview(as.formula(paste("1 ~", x)), 
+                     data = data_first,
+                     index = c("iso3c", "year"),
+                     axis.lab = "time",
+                     by.timing = TRUE,
+                     background = "white",
+                     main = "Treatment Status")
+      )
+
+## Physical chars
+# Define the list of variables
+list_first_phy <- list("first_treat_dis_hydro", "first_treat_dis_meteo", "first_treat_dis_clim")
+
+# Apply panelview to each variable in the list
+panelview_onset <- list_first_phy |>
+  map(\(x) panelview(as.formula(paste("1 ~", x)), 
+                     data = data_first,
+                     index = c("iso3c", "year"),
+                     axis.lab = "time",
+                     by.timing = TRUE,
+                     background = "white",
+                     main = "Treatment Status")
+      )
 ```
 
 ```{r label_vars}
@@ -372,17 +438,32 @@ panelview(1 ~ treat_large_first_stag, data = data_first,
 # labelled::var_label() <- list( = "")
 ```
 
-#### Treatment mean
+## Threshold effect window
 
-```{r}
-#| eval: false
+```{r rel_time_treshold_single}
 
-mutate(data_first,
-       treatment_first_stag_mean = mean(treatment_first_stag,na.rm = TRUE), 
-       .by = "iso3c")
+df <- select(data_first, iso3c, year, starts_with("first_treat_dis")) |> 
+  pivot_longer(cols = -c(iso3c, year), names_to = "dis", values_to = "treat")
+
+df |> 
+  split(df$dis) |> 
+  map(\(df) get.cohort(data = as.data.frame(df), D = 'treat',index = c("iso3c","year"))) |> 
+  map(\(df) summarize(df, freq = n(), .by = "Time_to_Treatment") |> 
+        arrange(Time_to_Treatment) |> 
+        filter(!is.na(Time_to_Treatment)) |> 
+        mutate(prop = freq/max(freq)) |> 
+        ggplot(aes(x=Time_to_Treatment, y=prop)) +
+        geom_bar(stat = "identity", fill = "grey") +
+        geom_hline(yintercept = .3, linetype="dotted", colour="red") +
+        theme_minimal()
+        )
+
+# further customization: add text above hline ("threshold: .3") + fill different color bars above threshold.
+
+# following Liu, Wang, and Xu (2024), plot only those periods whose number of treated observations exceeds a threshold, which is set as a proportion of the largest number of treated observations in a period (the default is proportion = 0.3).
 ```
 
-### Relative time since first treatment
+## Relative time since first treatment
 
 ```{r data_rel_time}
 
@@ -393,53 +474,7 @@ data_rel_time <- data_cohort|>
   select(iso3c, year, contains("rel_time"))
 ```
 
-### Cumulative staggered
-
-## Relative treatment paths
-
-```{r}
-#| eval: false
-
-map(treat.vars, \(x) {   
-  # Create the relative treatment time variables 
-  treat_path <- treatment_iso |>    
-    panel(~iso3c+year) |>    
-    group_by(iso3c) |>    
-    mutate(     
-      l5_D = lag(.data[[x]], n = 6L),     
-      l4_D = lag(.data[[x]], n = 5L),     
-      l3_D = lag(.data[[x]], n = 4L),     
-      l2_D = lag(.data[[x]], n = 3L),     
-      l1_D = lag(.data[[x]], n = 2L),     
-      t_D = lag(.data[[x]], n = 1L) 
-      # f1_D = x, 
-      # f2_D = lead(x, n = 1L), 
-      # f3_D = lead(x, n = 2L), 
-      # f4_D = lead(x, n = 3L), 
-      # f5_D = lead(x, n = 4L),   
-      )  
-  
-  # Identify relative treatment time variables 
-  rel_treat <- names(treat_path)[str_detect(names(treat_path), "_D$")]  
-
-  # Concatenate these variables into a new variable row-wise 
-  treat_path <- treat_path |>   
-  rowwise() |>
-  mutate(rel_treat_path = paste(c_across(all_of(rel_treat)), collapse = ",")) |>   
-  ungroup()  
-
-  # List and count all observed relative treatment paths 
-  treat_path |>  
-  # only keep obs. treated in t 
-  # remove treat.paths w/ NAs   
-  filter(t_D==1 & !grepl("NA", rel_treat_path)) |>    
-  group_by(rel_treat_path) |>    
-  tally() |>    
-  arrange(desc(n))    
-})
-```
-
-## Save
+# Save
 
 ```{r save}
 

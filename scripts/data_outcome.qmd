@@ -192,9 +192,14 @@ quantity_outcome_hum <- data_crs |>
 
 ```
 
-> For the proportions, how to deal with negative commitments?
-
 ### Zeroes and small values
+
+```{r commit_density}
+
+ggplot(quantity_outcome, aes(x = commit_total)) +
+  geom_density() +
+  theme_light()
+```
 
 #### Zeroes
 
@@ -219,9 +224,9 @@ fractions <- df.zero |>
 # Bar plot
 ggplot(fractions, aes(x = category, y = fraction)) +
   geom_bar(stat = "identity") +
-  labs(title = "Around 80% of obs. are zeroes",
+  labs(title = "> 20% of obs. are zeroes",
        subtitle = "Total commitments",
-       x = "Commitments (USD, in million)",
+       x = "USD, in million",
        y = "Fraction of Obs.") +
   theme_minimal()
 ```
@@ -249,9 +254,9 @@ fractions <- df.small |>
 # Bar plot
 ggplot(fractions, aes(x = category, y = fraction)) +
   geom_bar(stat = "identity") +
-  labs(title = "More than 40% of non-zero values range below 1 million USD",
+  labs(title = "40% of non-zero bilateral flows range below 1 million USD",
        subtitle = "Total commitments",
-       x = "Commitments (USD, in million)",
+       x = "USD, in million",
        y = "Fraction of Obs.") +
   theme_minimal()
 ```
@@ -260,8 +265,8 @@ ggplot(fractions, aes(x = category, y = fraction)) +
 
 ```{r commit_zero_threshold}
 
-mutate(quantity_outcome, across(starts_with("commit"), ~ ifelse(.x < 0.001, 0, .x)))
-mutate(quantity_outcome_hum, across(starts_with("commit"), ~ ifelse(.x < 0.001, 0, .x)))
+quantity_outcome <- mutate(quantity_outcome, across(starts_with("commit"), ~ ifelse(.x < 0.001, 0, .x)))
+quantity_outcome_hum <- mutate(quantity_outcome_hum, across(starts_with("commit"), ~ ifelse(.x < 0.001, 0, .x)))
 
 ```
 
@@ -283,11 +288,11 @@ Following Faye and Niehaus (2012) and Arezki et al. (2025), I adopt a dyadic app
 
 **Disadvantages**
 
--   higher risk of measurement error. However, I don't see any systematic bias one way or the other, but this can create noise in the estimation of treatment effects.
+-   higher risk of measurement error. However, I don't see any systematic bias one way or the other, but this can create noise in the estimation of treatment effects. To limit noise, I impose a threshold on small values (bilateral flows < 1,000 USD are considered as zeroes).
 
 -   Faye and Niehaus (2012) and Arezki et al. (2025) don't include multilateral donors, for different reasons. However, I don't see real restriction on including them in the analysis if I use dyad-level FEs.
 
-```{r}
+```{r panel_dimension}
 
 # donors
 length(unique(data_crs$donor_id))
@@ -302,8 +307,6 @@ length(unique(data_crs$donor_id)) * length(unique(data_crs$recipient_id)) * leng
 ```
 
 ## Outcome sample
-
--   **Merge**
 
 ```{r outcome}
 
@@ -322,6 +325,35 @@ data_outcome_hum <- merge(data_unit_hum, quantity_outcome_hum,
 # treat "true" zeros: NA if country's registration in OECD CRS > current period
   mutate(across(starts_with("commit_"), ~ ifelse(
     is.na(.x) & (cohort_donor <= year | cohort_recipient <= year), 0, .x)))
+```
+
+```{r data_outcome_zero}
+
+# Create categories
+df.zero <- data_outcome |> 
+  filter(year >= 2004) |> 
+  mutate(category = fct(case_when(
+    commit_total == 0 ~ "0",
+    commit_total > 0 & commit_total <= 0.001 ~ "]0, 0.001]",
+    commit_total > 0.001 & commit_total <= 0.01 ~ "]0.001, 0.01]",
+    commit_total > 0.01 & commit_total <= 0.1 ~ "]0.01, 0.1]",
+    commit_total > 0.1 & commit_total < 1 ~ "]0.1, 1[",
+    TRUE ~ "[1, Inf]"
+  ), levels = c("0", "]0, 0.001]", "]0.001, 0.01]", "]0.01, 0.1]", "]0.1, 1[", "[1, Inf]")))
+
+# Calculate fractions
+fractions <- df.zero |> 
+  group_by(category) |> 
+  summarise(fraction = n() / nrow(df.zero))
+
+# Bar plot
+ggplot(fractions, aes(x = category, y = fraction)) +
+  geom_bar(stat = "identity") +
+  labs(title = "~80% of obs. are zeroes",
+       subtitle = "Total commitments",
+       x = "USD, in million",
+       y = "Fraction of Obs.") +
+  theme_minimal()
 ```
 
 ## Proportions of total
@@ -354,7 +386,7 @@ load(file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\covaria
 
 list <- list(data_outcome, data_outcome_hum) |> 
   map(\(x) left_join(x, data_pop, by = c("iso3c", "year")) |> 
-        mutate(across(commit_total:commit_nonstate, ~ .x / population, .names = "{.col}_pc"))
+        mutate(across(commit_total:commit_nonstate, ~ .x / pop, .names = "{.col}_pc"))
   ) |> 
   setNames(c("pc", "pc_num"))
 
@@ -376,7 +408,7 @@ data_outcome <- list$ext
 data_outcome_hum <- list$ext_hum
 ```
 
-> Robustness check: .x > 1 (exclude small commitments)
+> Robustness check: .x \> 1 (exclude small commitments)
 
 # Appendix
 
@@ -401,4 +433,3 @@ save(data_outcome, data_outcome_hum,
 # remove all objects in the environment
 # rm(list = ls())
 ```
-

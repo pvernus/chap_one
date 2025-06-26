@@ -12,7 +12,7 @@ source(here::here('scripts', 'library.R'))
 
 Data is extracted from the OECD CRS platform as a parquet file.
 
-```{r data_import}
+```{r data_crs_import}
 
 data_crs_import <- arrow::read_parquet(
   file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\source\\outcome\\crs\\CRS.parquet") |> 
@@ -36,7 +36,8 @@ save(data_crs_import,
 # look_for(data_import)
 
 # select variables
-data_select <- select(data_crs_import, 1, 2:4, 5:6, 7:8, 9, 10:12, 13:15, 16:18, 19:24, 28:29, 50, 49, 64, 51:54, 55:58, 68, 79:82)
+data_select <- select(data_crs_import, 
+                      1, 2:4, 5:6, 7:8, 9, 10:12, 13:15, 16:18, 19:24, 28:29, 50, 49, 64, 51:54, 55:58, 68, 79:82)
 ```
 
 # Data cleaning
@@ -162,12 +163,13 @@ save(data_crs_clean,
      file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\outcome\\data_crs_clean.RData")
 ```
 
-
 # Data transformation
 
 ## Negative values
 
-```{r}
+I transform negative commitments/disbursements to zeroes.
+
+```{r data_censored}
 
 data_censored <- data_crs_clean |> 
   mutate(
@@ -215,7 +217,7 @@ data_sector <- data_censored |>
 
 ### Level consistency
 
-The OECD uses a three-level hierarchical typology for channels of delivery.
+The OECD uses a three-level hierarchical typology to classify channels of delivery.
 
 Depending of the channel category, the third level includes either the *type* of agency (ex: Pension Funds in Private sector in provider country) or the *name* of a specific agency (ex: African Development Bank in Regional Development Bank).
 
@@ -224,7 +226,7 @@ The name of the agency can also be added manually by the provider, but reporting
 #### Table: Example with the Donor Government group category.
 
 | Code | Level 1 | Code | Level 2 | Code | Level 3 | Reported name |
-|-----------|-----------|-----------|-----------|-----------|-----------|-----------|
+|----|----|----|----|----|----|----|
 | 10000 | Public Sector Institutions | 11000 | Donor Government | 11001 | Central Government | Ex: Ministry Of Employment And Labor, The U.S Department Of Homeland Security, Miscellaneous Suppliers, etc. |
 |  |  |  |  | 11002 | Local Government | Ex: Comune Di Reggio Emilia, Local Government, Busan Metropolitan City, etc. |
 |  |  |  |  | 11003 | Public corporations | Ex: The Export-Import Bank Of Korea, Kfw, Public Corporations, etc. |
@@ -232,7 +234,7 @@ The name of the agency can also be added manually by the provider, but reporting
 
 There are two variables with codes for channel of delivery: `channel_parent_category` (level 1) and `channel_code` (levels 2 and 3).
 
-To help the analysis, I create a unique code variable using the most granular level when both `channel_parent_category` and `channel_code` are provided.
+To help the analysis, I create a unique code variable using the most granular level when both `channel_parent_category` and `channel_code` are both provided.
 
 ```{r data_channel}
 
@@ -300,9 +302,9 @@ The channel of delivery became an *optional* reporting item on the new CRS++ rep
 
 Information on delivery channels has been added and updated over time. Similarly, new implementing agencies have also been added, while others have seen there name and/or channel code revised. So implementing agencies may be coded and/or described differently across time and space within the dataset.
 
-For consistency, I apply the latest code and name list provided by the OECD (last updated in July 2023)[^1].
+For consistency, I apply the latest code and name list provided by the OECD (last updated in April 2025)[^1].
 
-[^1]: The Excel file can be found [here](https://www.oecd.org/dac/financing-sustainable-development/development-finance-standards/dacandcrscodelists.htm).
+[^1]: The Excel file can be found [here](https://webfs.oecd.org/oda/DataCollection/Resources/DAC-CRS-CODES.xlsx).
 
 ```{r data_channel_code}
 
@@ -385,7 +387,7 @@ data_channel_code |>
 # This proportion is even higher for early years
 ```
 
-```{r}
+```{r data_channel_imp}
 
 data_channel_imp <- data_channel_code |> 
   mutate(channel_reported_name = str_to_lower(channel_reported_name),
@@ -405,7 +407,8 @@ data_channel_imp <- data_channel_code |>
 ```{r}
 #| eval: false
 
-data_crs |> 
+# % of commitments w/out a channel code but w/ a channel reported name
+data_channel_imp |> 
   filter(year %in% c(2004:2007), is.na(channel_code_unique)) |> 
   mutate(report = fct(ifelse(!is.na(channel_reported_name), "Yes", "No"))) |> 
   summarize(n = sum(usd_commitment_defl_censored, na.rm = T), .by = report) |> 
@@ -416,25 +419,17 @@ data_crs |>
 # 1    Yes 15822.51 29213.19 54.16
 # 2     No 13390.68 29213.19 45.84
 
-data_crs |> 
+# % commitments w/out a channel code and w/out a channel reported name, by flow modality
+data_channel_imp |> 
   filter(year %in% c(2004:2007), is.na(channel_code_unique)) |> 
-  mutate(report = fct(ifelse(!is.na(channel_reported_name), "Yes", "No"))) |> 
+  mutate(reported_name = fct(ifelse(!is.na(channel_reported_name), "Yes", "No"))) |> 
   filter(report=="No") |>
-  summarize(n = sum(usd_commitment_defl_censored, na.rm = T), .by = aid_t) |> 
+  summarize(n = sum(usd_commitment_defl_censored, na.rm = T), .by = c(reported_name, aid_t)) |> 
   mutate(total = sum(n)) |>
   mutate(share = round(n / total * 100, 2)) |>
   arrange(desc(n))
 # F01 3233.9612 13390.68 24.15
 # A02  573.2544 13390.68  4.28
-
-data_crs |> 
-  filter(year %in% c(2004:2007), is.na(channel_code_unique)) |> 
-  mutate(report = fct(ifelse(!is.na(channel_reported_name), "Yes", "No"))) |> 
-  filter(report=="No") |>
-  summarize(n = sum(usd_commitment_defl_censored, na.rm = T), .by = c(report, aid_t)) |> 
-  mutate(total = sum(n)) |>
-  mutate(share = round(n / total * 100, 2)) |>
-  arrange(desc(n))
 ```
 
 > Note: complete data imputation rules, based on sector-purpose (e.g. action related to debt) and channel reported name.
@@ -521,7 +516,7 @@ save(data_crs, delivery_crs_code,
      file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\outcome\\data_crs.RData")
 ```
 
-```{r data_iso3c}
+```{r data_unit}
 
 ## recipient
 data_iso3c <- data_crs |> 

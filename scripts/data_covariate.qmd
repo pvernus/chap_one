@@ -11,12 +11,6 @@ source(here::here('scripts', 'library.R'))
 
 ```{r load_data}
 
-# data source: OECD CRS
-load(here('data', 'data_oecd_crs_clean.RData'))
-
-# EM-DAT
-load(here('data', 'data_emdat_clean.RData'))
-
 # World Development Indicators (WBG)
 wdi_data <- readxl::read_excel("C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\source\\covariate\\country_level\\wdi\\P_Data_Extract_From_World_Development_Indicators.xlsx") |> 
   janitor::clean_names() |> 
@@ -34,10 +28,9 @@ wdi_data$iso3c <- ifelse(wdi_data$country_name=="Kosovo", wdi_data$iso3c=="XXK",
 unpop_data <- read_csv("C:/Users/pauvernu/Seafile/library/chap_one_data/source/covariate/country_level/un_wpp/unpopulation_dataportal_20250623182110.csv") |> 
   janitor::clean_names() |>
   select(country = location, iso3c = iso3, year = time, pop = value)
-```
 
-```{r data_covs}
-data_covs <- copy(data_crs)
+# data_crs
+load(file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\outcome\\data_crs.RData")
 ```
 
 # **Time-varying**
@@ -177,7 +170,7 @@ data_req <- data_req |>
 
 ```{r cov_region}
 
-data_region <-  data_covs |>    
+data_region <-  data_crs |>    
   distinct(iso3c, region_code, region_name) |> 
   mutate(region_agg = case_when(
     region_name %in% c("North of Sahara", "South of Sahara") ~ "Africa",
@@ -191,7 +184,7 @@ data_region <-  data_covs |>
 
 ```{r cov_incgp}
 
-data_incgp <- data_covs |>    
+data_incgp <- data_crs |>    
   distinct(iso3c, incomegroup_code, incomegroup_name) |> 
   arrange(iso3c)
 ```
@@ -212,7 +205,7 @@ data_covariate <- data_iso3c_year |>
   arrange(iso3c, year)
 ```
 
-```{r}
+```{r save_data_covariate}
 
 save(data_covariate, file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\covariate\\data_covariate.RData")
 ```

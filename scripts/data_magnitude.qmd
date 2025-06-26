@@ -308,11 +308,20 @@ list_clim <- list(data_wet, data_dry, data_hot, data_wind)
 # combine list elements
 data_clim <- do.call(rbind, list_clim)
 
+# modify labels
+labelled::var_label(data_clim$value) <- "(mean)"
+
+# summary
+summary(data_clim)
+```
+
+```{r}
+
 # create variables 
 data_clim <- data_clim |> 
   mutate(
-    mean = mean(value),
-    sd = sd(value),
+    mean = mean(value), # mean(value[year %in% 1980:2000])
+    sd = sd(value), # sd(value[year %in% 1980:2000])
     .by = c("geo_id", "indice", "percentile")
   ) |> 
   mutate( # define hazard severity as deviation from the historical mean (!= baseline mean < 2001)
@@ -322,39 +331,18 @@ data_clim <- data_clim |>
   ) |> 
   mutate(year = as.double(year)) |> 
   mutate(percentile = factor(percentile, levels=c("p1", "p5", "p10", "p99", "p95", "p90")))
-    
-# modify labels
-labelled::var_label(data_clim$value) <- "(mean)"
-
-# summary
-summary(data_clim)
 ```
 
 #### Save
 
-```{r}
+```{r save_data_clim}
 # save
 save(data_wet, data_dry, data_hot, data_wind, data_clim,
      file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\treatment\\data_clim.RData")
 ```
 
 ```{r}
-
-## facet by indice
-# mean value
-summarize(data_clim,
-          mean_value = mean(value),
-          .by = c(year, indice)) |> 
-  filter(year <= 2018) |> 
-  ggplot(aes(x = year, y = mean_value)) +
-  geom_line() +
-  geom_smooth(method=loess) +
-  facet_wrap(~indice) +
-  theme_light() +
-  labs(
-    x = "",
-    y = "Average # of days > historical mean + sd"
-  )
+#| eval: false
 
 # mean extreme
 # Define the color palette
@@ -363,20 +351,24 @@ color_palette <- c("p1" = "#E91300", "p99" = "#E91300",
                    "p10" = "#FFD17A", "p90" = "#FFD17A")
 # plot
 summarize(data_clim,
-          mean_extr = mean(severe),
+          mean = mean(value),
           .by = c(year, indice, percentile)) |> 
   filter(year <= 2018) |> 
-  ggplot(aes(x = year, y = mean_extr, color = percentile)) +
-  geom_line(alpha = .3) +
-  geom_smooth(method=loess, se = FALSE) +
+  ggplot(aes(x = year, y = mean, 
+             color = percentile, 
+             group = percentile)) +
+  geom_line() +
+#  geom_smooth(method = "loess", se = FALSE, alpha = 0.3) +
   scale_color_manual(values = color_palette) +
   facet_wrap(~indice) +
   theme_light() +
   labs(
+    title = "Trends in the average frequency of daily extreme events",
     x = "",
-    y = "Proportion of extreme events (days > historical mean + sd)"
-  )
-
+    y = "Avg frequency of daily extreme events / year"
+  ) +
+  theme(legend.position = "bottom",
+        axis.text.x = element_text(angle = 45, hjust = 1))
 ```
 
 ## Disaster events
@@ -465,7 +457,7 @@ data_gdis_short <- data_gdis |>
 
 Only keep OECD CRS recipient countries
 
-```{r}
+```{r data_dis_short}
 
 # load list recipient iso3c
 load(file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\outcome\\data_unit.RData")
@@ -476,6 +468,7 @@ data_gdis_short <- data_gdis_short[data_gdis_short$iso3c %in% data_iso3c$iso3c, 
 ```
 
 ```{r compare_data}
+#| eval: false
 
 ## compare nb of events
 length(unique(data_gdis_short$disasterno))
@@ -485,7 +478,7 @@ length(unique(data_emdat_short$disasterno))
 anti_join(distinct(data_gdis_short, disasterno, disastertype),
           distinct(data_emdat_short, disasterno),
           by = "disasterno")
-# NOTE: 125 events in GDIS w/out a match in EMDAT
+# NOTE: 125 events in GDIS w/out a match in EMDAT (many extreme temperature)
 
 ## events in emdat, missing in gdis
 anti_join(distinct(data_emdat_short, disasterno, disaster_type),
@@ -499,6 +492,7 @@ anti_join(distinct(data_emdat_short, disasterno, disaster_type),
 ```
 
 ```{r compare_data_freq}
+#| eval: false
 
 year_event_emdat = data_emdat_short |> 
   select(disaster_type, year = start_year, disasterno) |> 
@@ -520,9 +514,11 @@ ggplot(year_event, aes(x = year, y = n, color = source)) +
   facet_wrap(~ disaster_type, scales = "free_y") +
   theme_light() +
   labs(y = "Frequency")
+
+# NOTE: on average, EM-DAT include more disasters each year than GDIS.
 ```
 
-```{r join_gdis_emdat}
+```{r data_join_gdis_emdat}
 
 emdat = data_emdat_short |> 
   select(disasterno, disaster_type, country, iso3c, start_year, end_year) |> 
@@ -532,22 +528,22 @@ gdis = data_gdis_short |>
   select(disasterno, disaster_type = disastertype, country, iso3c, year, geo_id)
 
 # merge
-join_gdis_emdat <- left_join(gdis, emdat, 
+data_join_gdis_emdat <- left_join(gdis, emdat, 
                              by = c('disasterno', 'iso3c'), 
                              suffix = c('_gdis', '_emdat'))
 
 # difference in disaster type classification
-join_gdis_emdat |> 
+data_join_gdis_emdat |> 
   filter(disaster_type_gdis != disaster_type_emdat)
 # NOTE: not an issue.
 
 # difference in year
-join_gdis_emdat |> 
+data_join_gdis_emdat |> 
   filter(year < start_year | year > end_year)
 # NOTE: some events have different specified year between EMDAT and GDIS. For all of them, GDIS event starts one year before same EMDAT event.
 
 # Missing data
-join_gdis_emdat |> 
+data_join_gdis_emdat |> 
   filter(is.na(disasterno))
 # NOTE: not an issue.
 ```
@@ -556,7 +552,7 @@ join_gdis_emdat |>
 
 ```{r save join_gdis_emdat}
 
-save(join_gdis_emdat, file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\treatment\\join_gdis_emdat.RData")
+save(data_join_gdis_emdat, file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\treatment\\join_gdis_emdat.RData")
 ```
 
 ## Merge weather-disaster events
@@ -564,50 +560,58 @@ save(join_gdis_emdat, file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_da
 ```{r data_severity}
 
 length(unique(data_clim$geo_id))
-length(unique(join_gdis_emdat$geo_id))
+length(unique(data_join_gdis_emdat$geo_id))
 
-setdiff(data_clim$geo_id, join_gdis_emdat$geo_id)
-data_gdis |> 
-  filter(geo_id %in% setdiff(data_clim$geo_id, join_gdis_emdat$geo_id))
-# NOTE: geo_id in data_clim but missing in join_gdis_emdat are located in (i) Slovenia (not included in OECD CRS iso3c) and (ii) Ukraine (location in Crimea, that GDIS and EM-DAT code either in Ukraine or in Russia, so I removed it from the sample, see above).
+## ADM mismatch
+# in weather data, but missing in disaster data
+setdiff(data_clim$geo_id, data_join_gdis_emdat$geo_id)
 
-setdiff(join_gdis_emdat$geo_id, data_clim$geo_id)
 data_gdis |> 
-  filter(geo_id %in% setdiff(join_gdis_emdat$geo_id, data_clim$geo_id)) |> 
+  filter(geo_id %in% setdiff(data_clim$geo_id, data_join_gdis_emdat$geo_id))
+# NOTE: geo_id in data_clim but missing in data_join_gdis_emdat are located in (i) Slovenia (not included in OECD CRS iso3c) and (ii) Ukraine (location in Crimea, that GDIS and EM-DAT code either in Ukraine or in Russia, so I removed it from the sample, see above).
+
+# in disaster data, but missing in weather data
+setdiff(data_join_gdis_emdat$geo_id, data_clim$geo_id)
+
+data_gdis |> 
+  filter(geo_id %in% setdiff(data_join_gdis_emdat$geo_id, data_clim$geo_id)) |> 
   select(country, iso3c, geo_id, disasterno, disastertype) |> 
   slice_sample(n = 10)
+# NOTE: many ADM are missing in weather dataset. Not clear why for now.
 
-merged_df <- left_join(data_clim, join_gdis_emdat,
+data_clim_dis <- left_join(data_clim, data_join_gdis_emdat,
           by = "geo_id",
           suffix = c('', '_dis'))
 
 # CHECK: object should have the same number of obs. as data_clim
-length(unique((merged_df$geo_id)))
+length(unique((data_clim_dis$geo_id)))
 length(unique((data_clim$geo_id)))
 
 # N.B. emdat distinguishes between hot and cold extreme temperature events, but not gdis
 # remove *cold* extreme temperature events
-data_severity <- filter(merged_df, !(disaster_type_gdis == "extreme temperature" & is.na(disaster_type_emdat)))
+data_severity <- filter(data_clim_dis, !(disaster_type_gdis == "extreme temperature" & is.na(disaster_type_emdat)))
 ```
 
 #### Save
 
 ```{r save data_severity}
 
-save(data_severity, file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\treatment\\data_severity.RData")
+save(data_severity, 
+     file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\treatment\\data_severity.RData")
 ```
 
 ### Within-ADM variation
 
-```{r}
+```{r dis_dummy_reltime}
 
 # Create variables
 df <- data_severity |> 
+  mutate(year = as.double(year)) |> 
   mutate(dis_dummy = ifelse(year == year_dis, 1, 0),
          dis_reltime = year - year_dis)
 ```
 
-```{r}
+```{r dis_type}
 
 # Define the list of disaster types
 dis_type <- list("flood", "drought", "extreme temperature", "storm")
@@ -669,27 +673,57 @@ plot_prop_severe <- function(dis_type) {
 lapply(dis_type, plot_prop_severe)
 ```
 
-```{r}
+```{r plot_length_value}
+
+## average severity measure
+
+# define function
+plot_length_value <- function(dis_type) {
+  
+  df |> 
+    filter(disaster_type_gdis %in% dis_type) |> 
+    filter(dis_reltime %in% c(-5:5)) |> 
+    group_by(dis_reltime, indice, percentile) |> 
+    summarize(n = length(value), .groups = 'drop') |> 
+    ungroup() |> 
+    mutate(fill_color = ifelse(dis_reltime == 0, 'grey30', 'grey')) |> 
+    mutate(percentile = factor(percentile, 
+                               levels = c('p1', 'p5', 'p10', 'p99', 'p95', 'p90')))  |> 
+  ggplot(aes(x = factor(dis_reltime), y = n, fill = fill_color)) +
+  geom_bar(position = position_dodge(width = 1), stat = "identity") +
+  facet_wrap(indice ~ percentile, scales = "free", ncol = 3) +
+  scale_fill_manual(values = c("grey30" = "grey30", "grey" = "grey"),
+                    name = "Legend",
+                    labels = c("Other", "Disaster year", "N")) +
+  theme_minimal() +
+  labs(x = "Relative time to GDIS disaster year",
+       y = "# of obs.")
+}
+
+lapply(dis_type, plot_length_value)
+```
+
+```{r plot_mean_value}
 
 ## average severity measure
 
 # define function
 plot_mean_value <- function(dis_type) {
   
-  df %>%
-    filter(disaster_type_gdis == dis_type) %>%
-    filter(dis_reltime %in% c(-5:5)) %>%
-    group_by(dis_reltime, indice, percentile) %>%
-    summarize(value = mean(value, na.rm = TRUE), .groups = 'drop') %>%
-    ungroup() %>%
-    mutate(max = max(value), .by = c(indice, percentile)) %>%
+  df |> 
+    filter(disaster_type_gdis %in% dis_type) |> 
+    filter(dis_reltime %in% c(-5:5)) |> 
+    group_by(dis_reltime, indice, percentile) |> 
+    summarize(value = mean(value, na.rm = TRUE), .groups = 'drop') |> 
+    ungroup() |> 
+    mutate(max = max(value), .by = c(indice, percentile)) |> 
     mutate(fill_color = case_when(
       dis_reltime == 0 ~ 'grey30',
       value == max ~ 'red',
       TRUE ~ 'grey'
-    )) %>%
+    )) |> 
     mutate(percentile = factor(percentile, 
-                               levels = c('p1', 'p5', 'p10', 'p99', 'p95', 'p90'))) %>%
+                               levels = c('p1', 'p5', 'p10', 'p99', 'p95', 'p90')))  |> 
   ggplot(aes(x = factor(dis_reltime), y = value, fill = fill_color)) +
   geom_bar(position = position_dodge(width = 1), stat = "identity") +
   facet_wrap(indice ~ percentile, scales = "free", ncol = 3) +
@@ -698,14 +732,14 @@ plot_mean_value <- function(dis_type) {
                     labels = c("Other", "Disaster year", "Maximum value")) +
   theme_minimal() +
   labs(x = "Relative time to GDIS disaster year",
-       y = "Average number of days (severity measure)")
+       y = "Average frequency of daily extreme events (severity measure)")
 }
 
 lapply(dis_type, plot_mean_value)
 
 ```
 
-```{r}
+```{r boxplot_value}
 ## boxplot
 
 boxplot_value <- function(dis_type) {
