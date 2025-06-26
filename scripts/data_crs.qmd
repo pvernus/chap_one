@@ -62,20 +62,6 @@ data_id <- data_select |>
 
 We reduce the sample to projects with the following characteristics:
 
-### Year
-
-The channel of delivery became an *optional* reporting item on the new CRS++ reporting scheme in 2004 ([@dietrich2013]).
-
-The treatment window ends in 2018 (cf. GDIS).
-
-```{r year}
-
-# copy
-df <- copy(data_id)
-
-df <- filter(df, year %in% 2004:2018)
-```
-
 ### Nature of submission
 
 -   **Remove**: (5) Provisional data, (9) Net disbursements.
@@ -226,7 +212,7 @@ The name of the agency can also be added manually by the provider, but reporting
 #### Table: Example with the Donor Government group category.
 
 | Code | Level 1 | Code | Level 2 | Code | Level 3 | Reported name |
-|----|----|----|----|----|----|----|
+|-----------|-----------|-----------|-----------|-----------|-----------|-----------|
 | 10000 | Public Sector Institutions | 11000 | Donor Government | 11001 | Central Government | Ex: Ministry Of Employment And Labor, The U.S Department Of Homeland Security, Miscellaneous Suppliers, etc. |
 |  |  |  |  | 11002 | Local Government | Ex: Comune Di Reggio Emilia, Local Government, Busan Metropolitan City, etc. |
 |  |  |  |  | 11003 | Public corporations | Ex: The Export-Import Bank Of Korea, Kfw, Public Corporations, etc. |
@@ -502,6 +488,20 @@ data_chan <- data_mod |>
 data_cohort <- data_chan |>    
   mutate(cohort_donor = min(year), .by = donor_id) |>    
   mutate(cohort_recipient = min(year), .by = recipient_id)
+```
+
+### Year
+
+The channel of delivery became an *optional* reporting item on the new CRS++ reporting scheme in 2004 ([@dietrich2013]).
+
+The treatment window ends in 2018 (cf. GDIS).
+
+```{r}
+#| eval: false  
+
+# copy 
+df <- copy(data_cohort)  
+df <- filter(df, year %in% 2004:2018)
 ```
 
 ## Save

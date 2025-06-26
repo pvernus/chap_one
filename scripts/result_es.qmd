@@ -33,6 +33,35 @@ data_att_bin_stagg <- df_att_bin_stagg |>
 
 ```
 
+```{r}
+
+## Event-study but bin the relative periods
+
+df.es <- data_att_bin_stagg |> 
+  # add time-to-treatment
+  mutate(time_to_treatment = year - g.name) |> 
+  mutate(time_to_treatment = case_when(
+    time_to_treatment < -10 ~ -11,
+    time_to_treatment %in% -10:-2 ~ bin(time_to_treatment, "bin::2"),
+    time_to_treatment %in% 0:10 ~ bin(time_to_treatment, "bin::2"),
+    time_to_treatment > 10 ~ 11,
+    .default = time_to_treatment
+  ))
+
+iplot(feols(c(log(y.hum+.001), log(y.dev+.001)) ~ i(time_to_treatment, -1) | id + year + donor_id, cluster= ~id, data = df.es))
+
+# Sun and Abraham
+res.sunab = feols(c(log(y.hum+.001), log(y.dev+.001)) ~ sunab(g.name, year, bin.rel="bin::2") | id + year + donor_id, 
+      cluster=~id,
+      data=df.es)
+
+summary(res.sunab, agg = "att")
+
+iplot(res.sunab)
+
+```
+
+
 ```{r att_bin_stagg_res}
 
 ### Estimation
@@ -48,6 +77,7 @@ res.ols = feols(
 etable(res.ols)
 
 # Aggregation log-OLS
+
 # Imputation log-OLS
 
 ## Non-linear
@@ -135,15 +165,14 @@ data_att_quantile_stagg <- df_att_quantile_stagg |>
   # add linear trend
   mutate(t = year - min(year) + 1) |> 
   # add binning endpoints
-  mutate(
-    low_end = ifelse((year - g.name) < -10, 1, 0),
-    high_end = ifelse((year - g.name) > 10, 1, 0)
-  ) |> 
+#  mutate(
+#    low_end = ifelse((year - g.name) < -10, 1, 0),
+#    high_end = ifelse((year - g.name) > 10, 1, 0)
+#  ) |> 
   # add binomial outcome
   mutate(across(starts_with("y."), ~ ifelse(.x > 0, 1, 0), 
                 .names = "{.col}_dummy")) |> 
   relocate(y.hum_dummy:y.dev_dummy, .after = y.dev)
-
 
 head(data_att_quantile_stagg)
 
@@ -154,33 +183,42 @@ head(data_att_quantile_stagg)
 ### Estimation
 
 ## Linear
+##  + low_end + high_end
 
 # TWFE log-OLS
 res.ols = feols(
-  c(log(y.hum+.001), log(y.dev+.001)) ~ q1_dummy + q2_dummy + q3_dummy + q4_dummy + low_end + high_end | id + year + donor_id + recipient_id[t],
+  c(log(y.hum+.001), log(y.dev+.001)) ~ q1_dummy + q2_dummy + q3_dummy + q4_dummy | id + year + csw0(donor_id, recipient_id[t]),
   cluster = ~id,
   data = data_att_quantile_stagg)
 
 etable(res.ols)
 
 # Aggregation log-OLS
+etwfe(
+  fml  = c(log(y.hum+.001), log(y.dev+.001)) ~ q1_dummy + q2_dummy + q3_dummy + q4_dummy | id + year + csw0(donor_id, recipient_id[t]),
+  tvar = year,        # time variable
+  gvar = first.treat, # group variable
+  data = mpdta,       # dataset
+  vcov = ~countyreal  # vcov adjustment (here: clustered)
+)
+ 
 # Imputation log-OLS
 
 ## Non-linear
 
 # TWFE PPML
 res.pois = fepois(
-  c(y.hum, y.dev) ~ treat_04 + treat_510 + low_end + high_end | id + year + donor_id + recipient_id[t],
+  c(y.hum, y.dev) ~ q1_dummy + q2_dummy + q3_dummy + q4_dummy | id + year + csw0(donor_id, recipient_id[t]),
   cluster = ~id,
-  data = data_att_bin_stagg)
+  data = data_att_quantile_stagg)
 
 etable(res.pois)
 
 # TWFE GLM("logit")
 res.glm = feglm(family = binomial(link = "logit"),
-  c(y.hum_dummy, y.dev_dummy) ~ treat_04 + treat_510 + low_end + high_end | id + year + donor_id + recipient_id[t],
+  c(y.hum_dummy, y.dev_dummy) ~ q1_dummy + q2_dummy + q3_dummy + q4_dummy | id + year + csw0(donor_id, recipient_id[t]),
   cluster = ~id,
-  data = data_att_bin_stagg)
+  data = data_att_quantile_stagg)
 
 etable(res.glm)
 

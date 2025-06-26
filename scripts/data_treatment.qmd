@@ -479,6 +479,6 @@ data_treat_rel_time <- data_treat_cohort|>
 
 ```{r save}
 
-save(data_treat_first, data_treat_cohort, data_treat_rel_time,
+save(data_treat_rank, data_treat_cohort, data_treat_first, data_treat_rel_time,
      file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\treatment\\data_treatment.RData")
 ```

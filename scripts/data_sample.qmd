@@ -47,7 +47,7 @@ outcome <- data_outcome_hum |>
   select(donor_id, cohort_donor, recipient_id, cohort_recipient, year, sector_hum, y.name = commit_total) |> 
   filter(year >= 2004) |> 
   # remove donors and recipients entering the sample during the estimation window
-  filter(!c(cohort_donor > 2008 | cohort_recipient > 2008)) |> 
+  # filter(!c(cohort_donor > 2004 | cohort_recipient > 2004)) |> 
   select(-starts_with("cohort")) |> 
   summarize(
     y.hum = sum(y.name[sector_hum=="Humanitarian"], na.rm = T),
@@ -66,6 +66,9 @@ df_att_bin_stagg <- data_unit |>
   # order rows
   arrange(donor_id, recipient_id, year)
 
+```
+
+```{r}
 # plot treatment status
 panelview(data = df_att_bin_stagg,
           1 ~ d.name,
