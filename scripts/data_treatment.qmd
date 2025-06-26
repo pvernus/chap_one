@@ -220,7 +220,7 @@ data_treat_rank <- left_join(data_iso3c_year, df.rank, by = c("iso3c", "year")) 
   left_join(df.rank.phy, by = c("iso3c", "year"))
 ```
 
-# Multiple treatments of identical intensities (binary) 
+# Multiple treatments of identical intensities (binary)
 
 ## Treatment paths
 
@@ -329,11 +329,11 @@ summarize(data_treat,
 
 ## Cohorts
 
-```{r data_cohort}
+```{r data_treat_cohort}
 
 # create cohort variable
 ## by event type 
-data_cohort_type <- data_treat |> 
+data_treat_cohort_type <- data_treat |> 
   select(iso3c, year, ends_with("dummy")) |> 
   mutate(across(ends_with("dummy"), ~ ifelse(sum(.x) > 0, min(year[.x == 1]), 9999), .names = "cohort_{.col}"), 
          .by = iso3c) |> 
@@ -341,7 +341,7 @@ data_cohort_type <- data_treat |>
   select(iso3c, year, contains("cohort"))
 
 ## for top quantile/decile
-data_cohort_rank <- data_treat_rank |> 
+data_treat_cohort_rank <- data_treat_rank |> 
   mutate(across(starts_with("quantile"), ~ ifelse(.x==4, 1, 0), .names = "top_{.col}_dummy")) |> 
   mutate(across(starts_with("decile"), ~ ifelse(.x==10, 1, 0), .names = "top_{.col}_dummy")) |> 
   mutate(across(starts_with("top"), ~ ifelse(sum(.x, na.rm = T) > 0, min(year[.x == 1], na.rm = T), 9999), 
@@ -351,19 +351,19 @@ data_cohort_rank <- data_treat_rank |>
   select(iso3c, year, contains("cohort"))
 
 # merge
-data_cohort <- left_join(data_cohort_type, data_cohort_rank, by = c("iso3c", "year"))
+data_treat_cohort <- left_join(data_treat_cohort_type, data_treat_cohort_rank, by = c("iso3c", "year"))
 ```
 
 ```{r}
 #| eval: false
 
 # retrieve cohort vars
-cohort_vars <- names(data_cohort)[startsWith(names(data_cohort), "cohort")]
+cohort_vars <- names(data_treat_cohort)[startsWith(names(data_treat_cohort), "cohort")]
 # Create a list to store the results
 results_list <- list()
 # Loop through each cohort variable and apply the summarize and arrange functions
 for (var in cohort_vars) {
-  result <- data_cohort |> 
+  result <- data_treat_cohort |> 
     summarize(freq_country = length(unique(iso3c)), .by = !!sym(var)) %>%
     arrange(!!sym(var))
 
@@ -376,10 +376,10 @@ print(results_list)
 
 ## Staggered binary vars
 
-```{r data_first}
+```{r data_treat_first}
 
 # create dummy vars first-treatment
-data_first <- data_cohort |> 
+data_treat_first <- data_treat_cohort |> 
   mutate(across(starts_with("cohort"), ~ ifelse(year >= .x, 1, 0), 
                 .names = "first_treat_{.col}")) |> 
   rename_with(~ sub("cohort_", "", .), starts_with("first_treat")) |> 
@@ -393,7 +393,7 @@ data_first <- data_cohort |>
 #| eval: false
 
 ## all
-panelview(data = data_first,
+panelview(data = data_treat_first,
           1 ~ first_treat_dis,
           index = c("iso3c", "year"), 
           axis.lab = "time",
@@ -408,7 +408,7 @@ list_first_onset <- list("first_treat_dis_fast", "first_treat_dis_slow")
 # Apply panelview to each variable in the list
 panelview_onset <- list_first_onset |>
   map(\(x) panelview(as.formula(paste("1 ~", x)), 
-                     data = data_first,
+                     data = data_treat_first,
                      index = c("iso3c", "year"),
                      axis.lab = "time",
                      by.timing = TRUE,
@@ -423,7 +423,7 @@ list_first_phy <- list("first_treat_dis_hydro", "first_treat_dis_meteo", "first_
 # Apply panelview to each variable in the list
 panelview_onset <- list_first_phy |>
   map(\(x) panelview(as.formula(paste("1 ~", x)), 
-                     data = data_first,
+                     data = data_treat_first,
                      index = c("iso3c", "year"),
                      axis.lab = "time",
                      by.timing = TRUE,
@@ -442,7 +442,7 @@ panelview_onset <- list_first_phy |>
 
 ```{r rel_time_treshold_single}
 
-df <- select(data_first, iso3c, year, starts_with("first_treat_dis")) |> 
+df <- select(data_treat_first, iso3c, year, starts_with("first_treat_dis")) |> 
   pivot_longer(cols = -c(iso3c, year), names_to = "dis", values_to = "treat")
 
 df |> 
@@ -465,9 +465,9 @@ df |>
 
 ## Relative time since first treatment
 
-```{r data_rel_time}
+```{r data_treat_rel_time}
 
-data_rel_time <- data_cohort|> 
+data_treat_rel_time <- data_treat_cohort|> 
   mutate(across(starts_with("cohort"), ~ ifelse(.x %in% 2001:2018, year - .x, -1000), 
                 .names = "rel_time_{.col}")) |> 
   rename_with(~ sub("cohort_", "", .), starts_with("rel_time")) |> 
@@ -478,6 +478,6 @@ data_rel_time <- data_cohort|>
 
 ```{r save}
 
-save(data_first, data_cohort, data_rel_time,
+save(data_treat_first, data_treat_cohort, data_treat_rel_time,
      file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\treatment\\data_treatment.RData")
 ```

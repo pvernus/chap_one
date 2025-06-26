@@ -288,7 +288,7 @@ Following Faye and Niehaus (2012) and Arezki et al. (2025), I adopt a dyadic app
 
 **Disadvantages**
 
--   higher risk of measurement error. However, I don't see any systematic bias one way or the other, but this can create noise in the estimation of treatment effects. To limit noise, I impose a threshold on small values (bilateral flows < 1,000 USD are considered as zeroes).
+-   higher risk of measurement error. However, I don't see any systematic bias one way or the other, but this can create noise in the estimation of treatment effects. To limit noise, I impose a threshold on small values (bilateral flows \< 1,000 USD are considered as zeroes).
 
 -   Faye and Niehaus (2012) and Arezki et al. (2025) don't include multilateral donors, for different reasons. However, I don't see real restriction on including them in the analysis if I use dyad-level FEs.
 
