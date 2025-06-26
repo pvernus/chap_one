@@ -19,51 +19,205 @@ load(file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\treatme
 # covariates
 load(file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\covariate\\data_covariate.RData")
 # load(here('data', 'data_covariate.RData'))
+# units
+load(file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\outcome\\data_unit.RData")
 ```
 
 > NOTE(1): should the typology (categories) be defined here or earlier in data_crs? E.g. data cleaning in `data_crs` and data transformation in `data_sample`
 >
 > NOTE(2): same question as above for the definition of the observation window.
 
-# Sample
+# ATTs
 
-```{r sample_data}
+## Unique and binary treatment, staggered setting, hum/dev commitments
 
-outcome <- data_outcome |> 
-  select(donor_id, recipient_id, year, starts_with("commit"), starts_with("sh"))
+```{r att_bin_stagg}
 
-treatment <- data_treatment |> 
-  select(iso3c, year, treat_first_stag, cohort_dis, rel_time)
+# treatment
+treat_first <- select(data_first,
+         iso3c, year, d.name = first_treat_dis)
+treat_first_cohort <- select(data_cohort,
+         iso3c, year, g.name = cohort_dis)
+treatment <- merge(treat_first, treat_first_cohort, by = c("iso3c", "year"))
+# outcome
+outcome <- data_outcome_hum |> 
+  select(donor_id, recipient_id, year, sector_hum, y.name = commit_total) |> 
+  filter(year >= 2004) |> 
+  summarize(
+    y.hum = sum(y.name[sector_hum=="Humanitarian"], na.rm = T),
+    y.dev = sum(y.name[sector_hum!="Humanitarian"], na.rm = T),
+    .by = c("donor_id", "recipient_id", "year"))
 
-covariate <- data_covariate |> 
-  select(iso3c, year, incomegroup_name, region_agg)
-
-data_sample <- left_join(
-  # merge outcome sample
-  data_unit, outcome, by = c("donor_id", "recipient_id", "year")) |> 
-  # merge treatment sample
+# sample
+df_att_bin_stagg <- data_unit |> 
+  # remove donors and recipients entering the sample during the estimation window
+  filter(!c(cohort_donor > 2008 | cohort_recipient > 2008)) |> 
+  select(-starts_with("cohort")) |> 
+  # merge treatment
   left_join(treatment, by = c("iso3c", "year")) |> 
-  # merge covariate sample
-  left_join(covariate, by = c("iso3c", "year")) |> 
-  mutate(id = paste(donor_id, recipient_id, sep = "_")) |> 
-  relocate(id, .before = year)
+  # merge outcome
+  left_join(outcome, by = c("donor_id", "recipient_id", "year")) |> 
+  # create ID unit variable
+  mutate(id = paste0(donor_id, sep = "_", recipient_id)) |> 
+  relocate(id, .before = year) |> 
+  # order rows
+  arrange(donor_id, recipient_id, year)
+
+# plot treatment status
+panelview(data = df_att_bin_stagg,
+          1 ~ d.name,
+          index = c("id", "year"), 
+          by.timing = T, 
+          collapse.history = T,
+          #display.all = T
+          )
 ```
 
-```{r}
+```{r rank_donor}
 
-outcome_hum <- data_outcome_hum |> 
-  select(donor_id, recipient_id, sector_hum, year, starts_with("commit"), starts_with("sh"))
+rank_donor <- data_outcome_hum |> 
+  filter(year >= 2004) |> 
+  summarize(
+          total_hum = sum(commit_total[sector_hum=="Humanitarian"], na.rm = T),
+          total_dev = sum(commit_total[sector_hum!="Humanitarian"], na.rm = T),
+          .by = c(donor_id, donor_name)
+          ) |> 
+  mutate(total = total_hum + total_dev) |> 
+  arrange(desc(total)) |>
+  mutate(
+    rank = rank(-total, ties.method = "min"),
+    cumulative_distribution = cumsum(total) / sum(total)
+    ) |> 
+  mutate(top20 = ifelse(rank <= 20, "Top 20", "Other"))
+```
 
-data_sample_hum <- left_join(
-  # merge outcome sample
-  data_unit_hum, outcome_hum, by = c("donor_id", "recipient_id", "sector_hum", "year")) |> 
-  filter(sector_hum != "Other") |> 
-  # merge treatment sample
+
+## Static treatment effects, multiple treatment (onset), single dose (staggered), same intensity (binary), total commitments
+
+```{r df_static_multi.onset_stagg_binary_total}
+
+# treatment
+treat_first_onset <- select(data_first,
+         iso3c, year, d.fast = first_treat_dis_fast, d.slow = first_treat_dis_slow)
+treat_first_cohort_onset <- select(data_cohort,
+         iso3c, year, g.fast = cohort_dis_fast, g.slow = cohort_dis_slow)
+treatment <- merge(treat_first_onset, treat_first_cohort_onset, by = c("iso3c", "year"))
+# outcome
+outcome <- select(data_outcome,
+       donor_id, recipient_id, year, y.name = commit_total)
+# sample
+df_static_multi.onset_stagg_binary_total <- data_unit |> 
+  # remove donors and recipients entering the sample during the estimation window
+  filter(!c(cohort_donor > 2008 | cohort_recipient > 2008)) |> 
+  select(-starts_with("cohort")) |> 
+  # merge treatment
   left_join(treatment, by = c("iso3c", "year")) |> 
-  # merge covariate sample
-  left_join(covariate, by = c("iso3c", "year")) |> 
-  mutate(id = paste(donor_id, recipient_id, sep = "_")) |> 
-  relocate(id, .before = year)
+  # merge outcome
+  left_join(outcome, by = c("donor_id", "recipient_id", "year")) |> 
+  # create ID unit variable
+  mutate(id = paste0(donor_id, sep = "_", recipient_id)) |> 
+  relocate(id, .before = year) |> 
+  # order rows
+  arrange(donor_id, recipient_id, year)
+
+# plot treatment status
+list_onset <- list("d.slow", "d.fast")
+treat_status_onset <- list_onset |> 
+  map(\(x) panelview(data = df_static_multi.onset_stagg_binary_total,
+          # formula = y.name ~ d.fast + d.slow,
+          Y = "y.name",
+          D = x,
+          index = c("id", "year"),
+          main = x,
+          by.timing = T, 
+          collapse.history = T,
+          # display.all = T)
+          ))
+
+# % of units by cohorts
+list_onset_cohort <- list("g.fast", "g.slow")
+list_onset_cohort |> 
+  map(\(x){
+
+    # Convert the string to a symbol
+    x_sym <- sym(x)
+    
+    df_static_multi.onset_stagg_binary_total |> 
+      summarize(
+        n = n(),
+        usd = sum(y.name, na.rm = T),
+        .by = x_sym
+        ) |> 
+      mutate(
+        frac = n/sum(n),
+        frac_usd = usd/sum(usd)
+        ) |> 
+      arrange(desc(frac))
+})
+```
+
+## Static treatment effects, multiple treatment (phys. chars), single dose (staggered), same intensity (binary), total commitments
+
+```{r df_static_multi.phy_stagg_binary_total}
+
+# treatment
+treat_first_phy <- select(data_first,
+         iso3c, year, d.hydro = first_treat_dis_hydro, d.meteo = first_treat_dis_meteo, d.clim = first_treat_dis_clim)
+treat_first_cohort_phy <- select(data_cohort,
+         iso3c, year, g.hydro = cohort_dis_hydro, g.meteo = cohort_dis_meteo, g.clim = cohort_dis_clim)
+treatment <- merge(treat_first_phy, treat_first_cohort_phy, by = c("iso3c", "year"))
+# outcome
+outcome <- select(data_outcome,
+       donor_id, recipient_id, year, y.name = commit_total)
+# sample
+df_static_multi.phy_stagg_binary_total <- data_unit |> 
+  # remove donors and recipients entering the sample during the estimation window
+  filter(!c(cohort_donor > 2008 | cohort_recipient > 2008)) |> 
+  select(-starts_with("cohort")) |> 
+  # merge treatment
+  left_join(treatment, by = c("iso3c", "year")) |> 
+  # merge outcome
+  left_join(outcome, by = c("donor_id", "recipient_id", "year")) |> 
+  # create ID unit variable
+  mutate(id = paste0(donor_id, sep = "_", recipient_id)) |> 
+  relocate(id, .before = year) |> 
+  # order rows
+  arrange(donor_id, recipient_id, year)
+
+# plot treatment status
+list_phy <- list("d.hydro", "d.meteo", "d.clim")
+treat_status_phy <- list_phy |> 
+  map(\(x) panelview(data = df_static_multi.phy_stagg_binary_total,
+          # formula = y.name ~ d.hydro + d.meteo + d.clim,
+          Y = "y.name",
+          D = x,
+          index = c("id", "year"),
+          main = x,
+          by.timing = T, 
+          # collapse.history = T,
+          # display.all = T)
+          ))
+
+# % of units by cohorts
+list_phy_cohort <- list("g.hydro", "g.meteo", "g.clim")
+list_phy_cohort |> 
+  map(\(x){
+
+    # Convert the string to a symbol
+    x_sym <- sym(x)
+    
+    df_static_multi.phy_stagg_binary_total |> 
+      summarize(
+        n = n(),
+        usd = sum(y.name, na.rm = T),
+        .by = x_sym
+        ) |> 
+      mutate(
+        frac = n/sum(n),
+        frac_usd = usd/sum(usd)
+        ) |> 
+      arrange(desc(frac))
+})
 ```
 
 # Save

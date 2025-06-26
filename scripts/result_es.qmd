@@ -3,53 +3,135 @@ title: "Analysis"
 format: html
 ---
 
-```{r df}
+# ATTs staggered
 
-df = data_sample |> 
-  # observation window
+## Binarize and staggerize
+
+```{r att_bin_stagg_sample}
+
+### Sample
+
+df <- df_att_bin_stagg |> 
+  # define estimation window
   filter(year >= 2004) |> 
   # remove always-treated
-  filter(cohort_dis != 2001) |> 
-  # time trend
+  filter(g.name != 2001) |> 
+  # add linear trend
   mutate(t = year - min(year) + 1) |> 
-  # treated vs. never-treated
-  mutate(treatment_mean = mean(treat_first_stag, na.rm = TRUE), .by = "iso3c") |> 
-  mutate(treat = as.numeric(treatment_mean>0))
+  # add vars
+  mutate(
+    # short- and medium-term treatment
+    treat_04 = ifelse((year - g.name) %in% 0:4, 1, 0),
+    treat_510 = ifelse((year - g.name) %in% 5:10, 1, 0),
+    # binning endpoints
+    low_end = ifelse((year - g.name) < -10, 1, 0),
+    high_end = ifelse((year - g.name) > 10, 1, 0)
+  ) |> 
+  mutate(across(starts_with("y."), ~ ifelse(.x > 0, 1, 0), 
+                .names = "{.col}_dummy")) |> 
+  relocate(ends_with("dummy"), .after = y.dev)
+
 ```
 
-```{r df.sect}
+```{r att_bin_stagg_res}
 
-df.sect <- data_sample_hum |> 
-  # observation window
-  filter(year >= 2004) |> 
-  # remove always-treated
-  filter(cohort_dis != 2001) |> 
-  # time trend
-  mutate(t = year - min(year) + 1) |> 
-  # treated vs. never-treated
-  mutate(treatment_mean = mean(treat_first_stag, na.rm = TRUE), .by = "iso3c") |> 
-  mutate(treat = as.numeric(treatment_mean>0))
+### Estimation
+
+## Linear
+
+# TWFE log-OLS
+res.ols = feols(
+  c(log(y.hum+.001), log(y.dev+.001)) ~ treat_04 + treat_510 + low_end + high_end | id + year + donor_id + recipient_id[t],
+  cluster = ~id,
+  data = df)
+
+etable(res.ols)
+
+# Aggregation log-OLS
+# Imputation log-OLS
+
+## Non-linear
+
+# TWFE PPML
+res.pois = fepois(
+  c(y.hum, y.dev) ~ treat_04 + treat_510 + low_end + high_end | id + year + donor_id + recipient_id[t],
+  cluster = ~id,
+  data = df)
+
+etable(res.pois)
+
+# TWFE GLM("logit")
+res.glm = feglm(family = binomial(link = "logit"),
+  c(y.hum_dummy, y.dev_dummy) ~ treat_04 + treat_510 + low_end + high_end | id + year + donor_id + recipient_id[t],
+  cluster = ~id,
+  data = df)
+
+etable(res.glm)
+
+# ETWFE PPML
+# (Imputation PPML)
+
 ```
 
-## Goodman-Bacon Decomposition
+-   TWFE log-OLS: positive and significant effects for both short and medium terms. However, endpoints are also significant...
 
-```{r}
+-   TWFE GLM: non-significant results.
 
-data.complete <- df[which((df$cohort_recipient<=2004 | df$cohort_donor<=2004)),] # bacon requires no missingness in the data
+> Comment: not sure why (lag) endpoint estimate is significant in TWFE log-OLS. Non-significant results for GLM might be due to (i) too many non-reactive (small) donors, (ii) low severity 'first' disaster.
 
-df_bacon <- bacondecomp::bacon(commit_total~treat_first_stag,
-                  data = data.complete,
-                  id_var = "id",
-                  time_var = "year")
-# plot
-ggplot(df_bacon) +
-   aes(x = weight, y = estimate, shape = factor(type), color = factor(type)) +
-   labs(x = "Weight", y = "Estimate", shape = "Type", color = 'Type') +
-   geom_point()
+```{r att_bin_stagg_res_top_donor}
 
-print(aggregate(df_bacon$estimate * df_bacon$weight, 
-                list(df_bacon$type), FUN=sum))
+df_top_donor <- left_join(df, rank_donor, by = c("donor_id", "donor_name")) |> 
+  relocate(top20, .before = donor_id)
+
+### Estimation
+
+## Linear
+
+# TWFE log-OLS
+res.ols = feols(split = ~top20,
+  c(log(y.hum+.001), log(y.dev+.001)) ~ treat_04 + treat_510 + low_end + high_end | id + year + donor_id + recipient_id[t],
+  cluster = ~id,
+  data = df_top_donor)
+
+etable(res.ols)
+
+# Aggregation log-OLS
+# Imputation log-OLS
+
+## Non-linear
+
+# TWFE PPML
+res.pois = fepois(split = ~top20,
+  c(y.hum, y.dev) ~ treat_04 + treat_510 + low_end + high_end | id + year + donor_id + recipient_id[t],
+  cluster = ~id,
+  data = df_top_donor)
+
+etable(res.pois)
+
+# TWFE GLM("logit")
+res.glm = feglm(family = binomial(link = "logit"),
+                split = ~top20,
+  c(y.hum_dummy, y.dev_dummy) ~ treat_04 + treat_510 + low_end + high_end | id + year + donor_id + recipient_id[t],
+  cluster = ~id,
+  data = df_top_donor)
+
+etable(res.glm)
 ```
+
+- Results: size heterogeneity between donors doesn't seem to play a role in the results.
+
+
+
+
+
+
+
+
+
+
+
+
 
 ## Overall
 
