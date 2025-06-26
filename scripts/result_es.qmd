@@ -11,7 +11,7 @@ format: html
 
 ### Sample
 
-df <- df_att_bin_stagg |> 
+data_att_bin_stagg <- df_att_bin_stagg |> 
   # define estimation window
   filter(year >= 2004) |> 
   # remove always-treated
@@ -43,7 +43,7 @@ df <- df_att_bin_stagg |>
 res.ols = feols(
   c(log(y.hum+.001), log(y.dev+.001)) ~ treat_04 + treat_510 + low_end + high_end | id + year + donor_id + recipient_id[t],
   cluster = ~id,
-  data = df)
+  data = data_att_bin_stagg)
 
 etable(res.ols)
 
@@ -56,7 +56,7 @@ etable(res.ols)
 res.pois = fepois(
   c(y.hum, y.dev) ~ treat_04 + treat_510 + low_end + high_end | id + year + donor_id + recipient_id[t],
   cluster = ~id,
-  data = df)
+  data = data_att_bin_stagg)
 
 etable(res.pois)
 
@@ -64,7 +64,7 @@ etable(res.pois)
 res.glm = feglm(family = binomial(link = "logit"),
   c(y.hum_dummy, y.dev_dummy) ~ treat_04 + treat_510 + low_end + high_end | id + year + donor_id + recipient_id[t],
   cluster = ~id,
-  data = df)
+  data = data_att_bin_stagg)
 
 etable(res.glm)
 
@@ -81,7 +81,7 @@ etable(res.glm)
 
 ```{r att_bin_stagg_res_top_donor}
 
-df_top_donor <- left_join(df, rank_donor, by = c("donor_id", "donor_name")) |> 
+df_top_donor <- left_join(data_att_bin_stagg, rank_donor, by = c("donor_id", "donor_name")) |> 
   relocate(top20, .before = donor_id)
 
 ### Estimation
@@ -121,7 +121,73 @@ etable(res.glm)
 
 - Results: size heterogeneity between donors doesn't seem to play a role in the results.
 
+## Unique treatment w/ varying intensity, staggered setting
 
+### Quantile dummies
+
+```{r data_att_quantile_stagg_sample}
+
+data_att_quantile_stagg <- df_att_quantile_stagg |> 
+  # define estimation window
+  filter(year >= 2004) |> 
+  # remove always-treated
+  filter(g.name != 2001) |> 
+  # add linear trend
+  mutate(t = year - min(year) + 1) |> 
+  # add binning endpoints
+  mutate(
+    low_end = ifelse((year - g.name) < -10, 1, 0),
+    high_end = ifelse((year - g.name) > 10, 1, 0)
+  ) |> 
+  # add binomial outcome
+  mutate(across(starts_with("y."), ~ ifelse(.x > 0, 1, 0), 
+                .names = "{.col}_dummy")) |> 
+  relocate(y.hum_dummy:y.dev_dummy, .after = y.dev)
+
+
+head(data_att_quantile_stagg)
+
+```
+
+```{r data_att_quantile_stagg_res}
+
+### Estimation
+
+## Linear
+
+# TWFE log-OLS
+res.ols = feols(
+  c(log(y.hum+.001), log(y.dev+.001)) ~ q1_dummy + q2_dummy + q3_dummy + q4_dummy + low_end + high_end | id + year + donor_id + recipient_id[t],
+  cluster = ~id,
+  data = data_att_quantile_stagg)
+
+etable(res.ols)
+
+# Aggregation log-OLS
+# Imputation log-OLS
+
+## Non-linear
+
+# TWFE PPML
+res.pois = fepois(
+  c(y.hum, y.dev) ~ treat_04 + treat_510 + low_end + high_end | id + year + donor_id + recipient_id[t],
+  cluster = ~id,
+  data = data_att_bin_stagg)
+
+etable(res.pois)
+
+# TWFE GLM("logit")
+res.glm = feglm(family = binomial(link = "logit"),
+  c(y.hum_dummy, y.dev_dummy) ~ treat_04 + treat_510 + low_end + high_end | id + year + donor_id + recipient_id[t],
+  cluster = ~id,
+  data = data_att_bin_stagg)
+
+etable(res.glm)
+
+# ETWFE PPML
+# (Imputation PPML)
+# 
+```
 
 
 

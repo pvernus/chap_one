@@ -325,7 +325,7 @@ summarize(data_treat,
   arrange(desc(prop_treat))
 ```
 
-# Single treatments of identical intensities (first-treatment-and-staggerize)
+# Single treatments of identical intensities (binarize-and-staggerize)
 
 ## Cohorts
 
@@ -441,6 +441,7 @@ panelview_onset <- list_first_phy |>
 ## Threshold effect window
 
 ```{r rel_time_treshold_single}
+#| eval: false
 
 df <- select(data_treat_first, iso3c, year, starts_with("first_treat_dis")) |> 
   pivot_longer(cols = -c(iso3c, year), names_to = "dis", values_to = "treat")

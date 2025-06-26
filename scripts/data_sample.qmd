@@ -29,20 +29,26 @@ load(file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\outcome
 
 # ATTs
 
-## Unique and binary treatment, staggered setting, hum/dev commitments
+## Unique and binary treatment, staggered setting
+
+### Baseline
 
 ```{r att_bin_stagg}
 
 # treatment
-treat_first <- select(data_first,
+treat_first <- select(data_treat_first,
          iso3c, year, d.name = first_treat_dis)
-treat_first_cohort <- select(data_cohort,
+treat_first_cohort <- select(data_treat_cohort,
          iso3c, year, g.name = cohort_dis)
 treatment <- merge(treat_first, treat_first_cohort, by = c("iso3c", "year"))
+
 # outcome
 outcome <- data_outcome_hum |> 
-  select(donor_id, recipient_id, year, sector_hum, y.name = commit_total) |> 
+  select(donor_id, cohort_donor, recipient_id, cohort_recipient, year, sector_hum, y.name = commit_total) |> 
   filter(year >= 2004) |> 
+  # remove donors and recipients entering the sample during the estimation window
+  filter(!c(cohort_donor > 2008 | cohort_recipient > 2008)) |> 
+  select(-starts_with("cohort")) |> 
   summarize(
     y.hum = sum(y.name[sector_hum=="Humanitarian"], na.rm = T),
     y.dev = sum(y.name[sector_hum!="Humanitarian"], na.rm = T),
@@ -50,9 +56,6 @@ outcome <- data_outcome_hum |>
 
 # sample
 df_att_bin_stagg <- data_unit |> 
-  # remove donors and recipients entering the sample during the estimation window
-  filter(!c(cohort_donor > 2008 | cohort_recipient > 2008)) |> 
-  select(-starts_with("cohort")) |> 
   # merge treatment
   left_join(treatment, by = c("iso3c", "year")) |> 
   # merge outcome
@@ -73,6 +76,8 @@ panelview(data = df_att_bin_stagg,
           )
 ```
 
+### Split by donor size (top 20)
+
 ```{r rank_donor}
 
 rank_donor <- data_outcome_hum |> 
@@ -89,6 +94,43 @@ rank_donor <- data_outcome_hum |>
     cumulative_distribution = cumsum(total) / sum(total)
     ) |> 
   mutate(top20 = ifelse(rank <= 20, "Top 20", "Other"))
+```
+
+## Unique treatment w/ varying intensity, staggered setting
+
+### Quantile dummies
+
+```{r df_att_quantile_stagg}
+# treatment
+df.rank <- data_treat_rank |> select(iso3c, year, quantile_rank)
+df.cohort <- data_treat_cohort |> select(iso3c, year, cohort_dis)
+
+treatment <- merge(df.rank, df.cohort, by = c("iso3c", "year")) |> 
+  mutate(rank_first = first(quantile_rank[year == cohort_dis], default = NA), .by = iso3c) |> 
+  mutate(
+    q1_dummy = ifelse(year >= cohort_dis & rank_first==1, 1, 0),
+    q2_dummy = ifelse(year >= cohort_dis & rank_first==2, 1, 0),
+    q3_dummy = ifelse(year >= cohort_dis & rank_first==3, 1, 0),
+    q4_dummy = ifelse(year >= cohort_dis & rank_first==4, 1, 0)    
+  ) |> 
+  select(iso3c, year, ends_with("dummy"), g.name = cohort_dis)
+
+# outcome
+# same as "att_bin_stagg"
+
+# sample
+df_att_quantile_stagg <- data_unit |> 
+  select(-starts_with("cohort")) |> 
+  # merge treatment
+  left_join(treatment, by = c("iso3c", "year")) |> 
+  # merge outcome
+  left_join(outcome, by = c("donor_id", "recipient_id", "year")) |> 
+  # create ID unit variable
+  mutate(id = paste0(donor_id, sep = "_", recipient_id)) |> 
+  relocate(id, .before = year) |> 
+  # order rows
+  arrange(donor_id, recipient_id, year)
+
 ```
 
 
