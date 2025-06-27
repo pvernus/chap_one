@@ -30,17 +30,16 @@ df.es.bin <- data_es_bin |>
   # add time-to-treatment
   mutate(time_to_treatment = ifelse(g.name==9999, -1000, year - g.name)) |> 
   mutate(time_to_treatment = case_when(
-    time_to_treatment < -10 ~ -11,
-    time_to_treatment %in% -10:-2 ~ bin(time_to_treatment, "bin::2"),
-    time_to_treatment %in% 0:10 ~ bin(time_to_treatment, "bin::2"),
-    time_to_treatment > 10 ~ 11,
+    time_to_treatment <= -10 ~ -10,
+#    time_to_treatment %in% -10:-2 ~ bin(time_to_treatment, "bin::2"),
+#    time_to_treatment %in% 0:10 ~ bin(time_to_treatment, "bin::2"),
+    time_to_treatment >= 10 ~ 10,
     .default = time_to_treatment
-  ))
-
-# binomial outcome vars
-#  mutate(across(starts_with("y."), ~ ifelse(.x > 0, 1, 0), 
-#                .names = "{.col}_dummy")) |> 
-#  relocate(ends_with("dummy"), .after = y.dev)
+  )) |> 
+  # binomial outcome vars
+  mutate(across(starts_with("y."), ~ ifelse(.x > 0, 1, 0), 
+                .names = "{.col}_dummy")) |> 
+  relocate(ends_with("dummy"), .after = y.dev)
 
 ```
 
@@ -48,7 +47,12 @@ df.es.bin <- data_es_bin |>
 
 # donor-year FEs + recipient covariates
 feols(
-  c(log(y.hum+.001), log(y.dev+.001)) ~ i(time_to_treatment, ref = c(-1, -1000)) + log(gdp_donor) + log(pop_donor) + log(gdp_recip) + log(pop_recip) | id + year, cluster = ~id, data = df.es.bin
+  log(y.hum+.001) ~ i(time_to_treatment, ref = c(-2:-1, -1000)) + log(gdp_donor) + log(pop_donor) + log(gdp_recip) + log(pop_recip) | id + year, cluster = ~id, data = df.es.bin
+  ) |> 
+  iplot()
+
+feols(
+  log(y.dev+.001) ~ i(time_to_treatment, ref = c(-2:-1, -1000)) + log(gdp_donor) + log(pop_donor) + log(gdp_recip) + log(pop_recip) | id + year, cluster = ~id, data = df.es.bin
   ) |> 
   iplot()
 ```
@@ -56,12 +60,40 @@ feols(
 ```{r}
 
 feols(
-  log(y.hum+.001) ~ sunab(g.name, year, bin.rel = c(-11:-10, 11:13)) + log(gdp_donor) + log(pop_donor) + log(gdp_recip) + log(pop_recip) | id + year, cluster = ~id, data = df.es.bin) |> 
+  log(y.hum+.001) ~ sunab(g.name, year, bin.rel = c(-11:-10, -2:-1, 10:13), ref.p = c(-2:-1, -1000)) + log(gdp_donor) + log(pop_donor) + log(gdp_recip) + log(pop_recip) | id + year, cluster = ~id, data = df.es.bin) |> 
   iplot()
 
 feols(
-  log(y.dev+.001) ~ sunab(g.name, year, bin.rel = c(-11:-10, 11:13)) + log(gdp_donor) + log(pop_donor) + log(gdp_recip) + log(pop_recip) | id + year, cluster = ~id, data = df.es.bin) |> 
+  log(y.dev+.001) ~ sunab(g.name, year, bin.rel = c(-11:-10, -2:-1, 10:13), ref.p = c(-2:-1, -1000)) + log(gdp_donor) + log(pop_donor) + log(gdp_recip) + log(pop_recip) | id + year, cluster = ~id, data = df.es.bin) |> 
   iplot()
+```
+
+```{r}
+
+fepois(
+  y.hum ~ i(time_to_treatment, ref = c(-2:-1, -1000)) + log(gdp_donor) + log(pop_donor) + log(gdp_recip) + log(pop_recip) | id + year, cluster = ~id, data = df.es.bin
+  ) |> 
+  iplot()
+
+fepois(
+  y.dev ~ i(time_to_treatment, ref = c(-2:-1, -1000)) + log(gdp_donor) + log(pop_donor) + log(gdp_recip) + log(pop_recip) | id + year, cluster = ~id, data = df.es.bin
+  ) |> 
+  iplot()
+
+```
+
+```{r}
+
+feglm(family = binomial(link = "logit"),
+  y.hum_dummy ~ i(time_to_treatment, ref = c(-2:-11, -1000)) + log(gdp_donor) + log(pop_donor) + log(gdp_recip) + log(pop_recip) | id + year, cluster = ~id, data = df.es.bin
+  ) |> 
+  iplot()
+
+feglm(family = binomial(link = "logit"),
+  y.dev_dummy ~ i(time_to_treatment, ref = c(-2:-1, -1000)) + log(gdp_donor) + log(pop_donor) + log(gdp_recip) + log(pop_recip) | id + year, cluster = ~id, data = df.es.bin
+  ) |> 
+  iplot()
+
 ```
 
 
