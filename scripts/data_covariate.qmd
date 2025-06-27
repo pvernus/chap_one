@@ -9,27 +9,38 @@ editor: visual
 source(here::here('scripts', 'library.R'))
 ```
 
-```{r load_data}
+```{r load_data_wbg}
 
 # World Development Indicators (WBG)
-wdi_data <- readxl::read_excel("C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\source\\covariate\\country_level\\wdi\\P_Data_Extract_From_World_Development_Indicators.xlsx") |> 
+data_wbg <- read_csv("C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\source\\covariate\\country_level\\wbg\\d56dce6b-8d63-43ad-b09c-be9937a84afb_Country - Metadata.csv") |> 
   janitor::clean_names() |> 
+  select(-series_code) |> 
   pivot_longer(cols = contains("yr"), names_to = "year", values_to = "value") |> 
   mutate(year = as.numeric(str_sub(year, -4, -1)),
          value = as.double(value)) |> 
-  filter(!is.na(series_code))
-wdi_data$iso3c <- countrycode(sourcevar = wdi_data$country_name,
+  mutate(iso3c = countrycode(sourcevar = country_name,
                              origin = "country.name",
                              destination = "iso3c",
-                             warn = T)
-wdi_data$iso3c <- ifelse(wdi_data$country_name=="Kosovo", wdi_data$iso3c=="XXK", wdi_data$iso3c)
+                             warn = T)) |> 
+  mutate(iso3c = case_when(
+    country_name=="Kosovo" ~ "XXK",
+    country_name=="European Union" ~"EUR",
+    .default = iso3c
+  )) |> 
+  filter(!is.na(iso3c))
+```
+
+```{r load_data_un}
 
 # UN Population
-unpop_data <- read_csv("C:/Users/pauvernu/Seafile/library/chap_one_data/source/covariate/country_level/un_wpp/unpopulation_dataportal_20250623182110.csv") |> 
+data_un <- read_csv("C:/Users/pauvernu/Seafile/library/chap_one_data/source/covariate/country_level/un_wpp/unpopulation_dataportal_20250623182110.csv") |> 
   janitor::clean_names() |>
   select(country = location, iso3c = iso3, year = time, pop = value)
+```
 
-imf_weo_data <- read.csv("C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\source\\covariate\\country_level\\imf\\dataset_2025-06-27T12_48_25.610369931Z_DEFAULT_INTEGRATION_IMF.RES_WEO_6.0.0.csv") |> 
+```{r load_data_imf}
+
+data_imf <- read.csv("C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\source\\covariate\\country_level\\imf\\dataset_2025-06-27T12_48_25.610369931Z_DEFAULT_INTEGRATION_IMF.RES_WEO_6.0.0.csv") |> 
   janitor::clean_names() |> 
   select(country, indicator, starts_with("x")) |> 
   mutate(indicator = ifelse(grepl("GDP", indicator), "gdp_curr_usd", "population")) |> 
@@ -43,6 +54,7 @@ imf_weo_data <- read.csv("C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\
     names_from = indicator,
     values_from = value
   ) |> 
+  mutate(year = as.double(year)) |> 
   mutate(iso3c = countrycode(sourcevar = country,
                              origin = "country.name",
                              destination = "iso3c",
@@ -57,6 +69,9 @@ imf_weo_data <- read.csv("C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\
   )) |> 
   relocate(iso3c, .before = country) |> 
   filter(!is.na(iso3c))
+```
+
+```{r load_data_crs}
 
 # data_crs
 load(file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\outcome\\data_crs.RData")
@@ -64,18 +79,16 @@ load(file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\outcome
 
 # **Time-varying**
 
-## Recipient
-
-### GDP
+## GDP
 
 ```{r gdp_data}
 
-data_gdp <- wdi_data |> 
-  filter(series_name=="GDP, PPP (constant 2021 international $)") |> 
-  dplyr::select(iso3c, year, gdp = value)
+data_gdp <- data_wbg |> 
+  filter(series_name=="GDP (constant 2015 US$)") |> 
+  select(iso3c, year, gdp = value)
 
 labelled::var_label(data_gdp) <- list(
-  gdp = "GDP, PPP (constant 2021 international $)"
+  gdp = "GDP per capita (constant 2015 US$)"
 )
 ```
 
@@ -83,11 +96,15 @@ labelled::var_label(data_gdp) <- list(
 
 ```{r pop_data}
 
-data_pop <- unpop_data |> select(-country)
+data_pop <- data_wbg |> 
+  filter(series_name=="Population, total") |> 
+  select(iso3c, year, pop = value)
 
 labelled::var_label(data_pop) <- list(
   pop = "Population, total"
 )
+
+
 ```
 
 ### Other climatic shocks
@@ -221,7 +238,7 @@ data_incgp <- data_crs |>
 ```{r data_covariate}
 
 data_covariate <- data_iso3c_year |> 
-#  left_join(data_gdp, by = c("year", "iso3c")) |> 
+  left_join(data_gdp, by = c("year", "iso3c")) |> 
 #  left_join(data_gdp.pc, by = c("year", "iso3c")) |>
   left_join(data_pop, by = c("year", "iso3c")) |>
 #  left_join(data_clim_shock, by = "iso3c") |> 
@@ -236,5 +253,6 @@ data_covariate <- data_iso3c_year |>
 
 ```{r save_data_covariate}
 
-save(data_covariate, file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\covariate\\data_covariate.RData")
+save(data_gdp, data_pop, data_incgp, data_region, data_covariate, 
+     file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\covariate\\data_covariate.RData")
 ```

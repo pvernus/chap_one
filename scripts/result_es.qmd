@@ -3,43 +3,32 @@ title: "Analysis"
 format: html
 ---
 
-# ATTs staggered
+# Binarize and staggerize
 
-## Binarize and staggerize
+# Binarize and staggerize
 
-```{r att_bin_stagg_sample}
+## Event-Study
+
+### Single, binary treatment
+
+```{r es_bin_sample}
 
 ### Sample
 
-data_att_bin_stagg <- df_att_bin_stagg |> 
-  # define estimation window
-  filter(year >= 2004) |> 
-  # remove always-treated
-  filter(g.name != 2001) |> 
-  # add linear trend
-  mutate(t = year - min(year) + 1) |> 
-  # add vars
-  mutate(
-    # short- and medium-term treatment
-    treat_04 = ifelse((year - g.name) %in% 0:4, 1, 0),
-    treat_510 = ifelse((year - g.name) %in% 5:10, 1, 0),
-    # binning endpoints
-    low_end = ifelse((year - g.name) < -10, 1, 0),
-    high_end = ifelse((year - g.name) > 10, 1, 0)
-  ) |> 
-  mutate(across(starts_with("y."), ~ ifelse(.x > 0, 1, 0), 
-                .names = "{.col}_dummy")) |> 
-  relocate(ends_with("dummy"), .after = y.dev)
+panelview(Y = "y.dev", 
+          D = "d.name",
+          data = data_es_bin, 
+          index = c("id","year"), 
+          xlab = "Year", 
+          ylab = "Unit", 
+          display.all = T, 
+          gridOff = TRUE, 
+          by.timing = TRUE,
+          report.missing = TRUE)
 
-```
-
-```{r}
-
-## Event-study but bin the relative periods
-
-df.es <- data_att_bin_stagg |> 
+df.es.bin <- data_es_bin |> 
   # add time-to-treatment
-  mutate(time_to_treatment = year - g.name) |> 
+  mutate(time_to_treatment = ifelse(g.name==9999, -1000, year - g.name)) |> 
   mutate(time_to_treatment = case_when(
     time_to_treatment < -10 ~ -11,
     time_to_treatment %in% -10:-2 ~ bin(time_to_treatment, "bin::2"),
@@ -48,18 +37,80 @@ df.es <- data_att_bin_stagg |>
     .default = time_to_treatment
   ))
 
-iplot(feols(c(log(y.hum+.001), log(y.dev+.001)) ~ i(time_to_treatment, -1) | id + year + donor_id, cluster= ~id, data = df.es))
-
-# Sun and Abraham
-res.sunab = feols(c(log(y.hum+.001), log(y.dev+.001)) ~ sunab(g.name, year, bin.rel="bin::2") | id + year + donor_id, 
-      cluster=~id,
-      data=df.es)
-
-summary(res.sunab, agg = "att")
-
-iplot(res.sunab)
+# binomial outcome vars
+#  mutate(across(starts_with("y."), ~ ifelse(.x > 0, 1, 0), 
+#                .names = "{.col}_dummy")) |> 
+#  relocate(ends_with("dummy"), .after = y.dev)
 
 ```
+
+```{r ols}
+
+# donor-year FEs + recipient covariates
+feols(
+  c(log(y.hum+.001), log(y.dev+.001)) ~ i(time_to_treatment, ref = c(-1, -1000)) + log(gdp_donor) + log(pop_donor) + log(gdp_recip) + log(pop_recip) | id + year, cluster = ~id, data = df.es.bin
+  ) |> 
+  iplot()
+```
+
+```{r}
+
+feols(
+  log(y.hum+.001) ~ sunab(g.name, year, bin.rel = c(-11:-10, 11:13)) + log(gdp_donor) + log(pop_donor) + log(gdp_recip) + log(pop_recip) | id + year, cluster = ~id, data = df.es.bin) |> 
+  iplot()
+
+feols(
+  log(y.dev+.001) ~ sunab(g.name, year, bin.rel = c(-11:-10, 11:13)) + log(gdp_donor) + log(pop_donor) + log(gdp_recip) + log(pop_recip) | id + year, cluster = ~id, data = df.es.bin) |> 
+  iplot()
+```
+
+
+
+```{r}
+
+
+feols(c(log(y.hum+.001), log(y.dev+.001)) ~ sunab(g.name, year) | id + year, data = df.es.bin) |> 
+  iplot() |> 
+   summary(agg = "att")
+
+recipient_id[t]
+donor_id^year
+gdp_recip + pop_recip
+gdp_donor + pop_donor
+
+
+etwfe = etwfe::etwfe(
+  fml  = y.dev ~ 0,
+  tvar = year,
+  ivar = id,
+  gvar = g.name,
+  data = df.es.bin,
+  cgroup = "never",
+  vcov = ~id
+) |> 
+  etwfe::emfx(type = "event")
+
+plot(etwfe)
+
+
+
+etwfe = etwfe::etwfe(
+  fml  = y.hum ~ 0,
+  tvar = year,
+  ivar = id,
+  gvar = g.name,
+  family = "poisson",
+  data = df.es.bin,
+  cgroup = "never",
+  vcov = ~id
+) |> 
+  etwfe::emfx(type = "event")
+
+plot(etwfe)
+
+```
+
+
 
 
 ```{r att_bin_stagg_res}
@@ -157,13 +208,8 @@ etable(res.glm)
 
 ```{r data_att_quantile_stagg_sample}
 
-data_att_quantile_stagg <- df_att_quantile_stagg |> 
-  # define estimation window
-  filter(year >= 2004) |> 
-  # remove always-treated
-  filter(g.name != 2001) |> 
-  # add linear trend
-  mutate(t = year - min(year) + 1) |> 
+data_att_quantile_stagg <- df_att_quantile_stagg
+
   # add binning endpoints
 #  mutate(
 #    low_end = ifelse((year - g.name) < -10, 1, 0),
@@ -183,6 +229,19 @@ head(data_att_quantile_stagg)
 ### Estimation
 
 ## Linear
+
+feols(
+  c(log(y.hum+.001), log(y.dev+.001)) ~ i(time_to_treatment.q1, ref = c(-1, -1000)) + treat.q2 + treat.q3 + treat.q4 | 
+    id + year, 
+  cluster = ~id, 
+  data = data_att_quantile_stagg) |> 
+  iplot()
+
+
+# try csw(time_to_treatment.q1, time_to_treatment.q2, time_to_treatment.q3, time_to_treatment.q4)
+
+
+ 
 ##  + low_end + high_end
 
 # TWFE log-OLS
