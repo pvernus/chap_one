@@ -212,7 +212,7 @@ The name of the agency can also be added manually by the provider, but reporting
 #### Table: Example with the Donor Government group category.
 
 | Code | Level 1 | Code | Level 2 | Code | Level 3 | Reported name |
-|-----------|-----------|-----------|-----------|-----------|-----------|-----------|
+|----|----|----|----|----|----|----|
 | 10000 | Public Sector Institutions | 11000 | Donor Government | 11001 | Central Government | Ex: Ministry Of Employment And Labor, The U.S Department Of Homeland Security, Miscellaneous Suppliers, etc. |
 |  |  |  |  | 11002 | Local Government | Ex: Comune Di Reggio Emilia, Local Government, Busan Metropolitan City, etc. |
 |  |  |  |  | 11003 | Public corporations | Ex: The Export-Import Bank Of Korea, Kfw, Public Corporations, etc. |

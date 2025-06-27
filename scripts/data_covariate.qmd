@@ -29,6 +29,35 @@ unpop_data <- read_csv("C:/Users/pauvernu/Seafile/library/chap_one_data/source/c
   janitor::clean_names() |>
   select(country = location, iso3c = iso3, year = time, pop = value)
 
+imf_weo_data <- read.csv("C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\source\\covariate\\country_level\\imf\\dataset_2025-06-27T12_48_25.610369931Z_DEFAULT_INTEGRATION_IMF.RES_WEO_6.0.0.csv") |> 
+  janitor::clean_names() |> 
+  select(country, indicator, starts_with("x")) |> 
+  mutate(indicator = ifelse(grepl("GDP", indicator), "gdp_curr_usd", "population")) |> 
+  pivot_longer(
+    cols = starts_with("x"),
+    names_to = "year",
+    names_prefix = "x",
+    values_to = "value"
+  ) |>
+  pivot_wider(
+    names_from = indicator,
+    values_from = value
+  ) |> 
+  mutate(iso3c = countrycode(sourcevar = country,
+                             origin = "country.name",
+                             destination = "iso3c",
+                             warn = T)) |> 
+  mutate(iso3c = case_when(
+    grepl("Macao", country) ~ "MAC",
+    grepl("Aruba", country) ~ "ABW",
+    grepl("Kosovo", country) ~ "XXK",
+    grepl("Hong Kong", country) ~ "HKG",
+    grepl("European Union (EU)", country) ~ "EUN",
+    .default = iso3c
+  )) |> 
+  relocate(iso3c, .before = country) |> 
+  filter(!is.na(iso3c))
+
 # data_crs
 load(file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\outcome\\data_crs.RData")
 ```
