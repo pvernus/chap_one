@@ -3,7 +3,11 @@ title: "Analysis"
 format: html
 ---
 
-# Binarize and staggerize
+# Multiple Dummies On (MDO)
+
+
+
+# IN PROGRESS
 
 # Binarize and staggerize
 
@@ -11,9 +15,7 @@ format: html
 
 ### Single, binary treatment
 
-```{r es_bin_sample}
-
-### Sample
+```{r}
 
 panelview(Y = "y.dev", 
           D = "d.name",
@@ -25,6 +27,12 @@ panelview(Y = "y.dev",
           gridOff = TRUE, 
           by.timing = TRUE,
           report.missing = TRUE)
+```
+
+
+```{r es_bin_sample}
+
+### Sample
 
 df.es.bin <- data_es_bin |> 
   # add time-to-treatment
@@ -96,27 +104,14 @@ feglm(family = binomial(link = "logit"),
 
 ```
 
-
-
 ```{r}
-
-
-feols(c(log(y.hum+.001), log(y.dev+.001)) ~ sunab(g.name, year) | id + year, data = df.es.bin) |> 
-  iplot() |> 
-   summary(agg = "att")
-
-recipient_id[t]
-donor_id^year
-gdp_recip + pop_recip
-gdp_donor + pop_donor
-
 
 etwfe = etwfe::etwfe(
   fml  = y.dev ~ 0,
   tvar = year,
   ivar = id,
   gvar = g.name,
-  data = df.es.bin,
+  data = df,
   cgroup = "never",
   vcov = ~id
 ) |> 
@@ -127,7 +122,7 @@ plot(etwfe)
 
 
 etwfe = etwfe::etwfe(
-  fml  = y.hum ~ 0,
+  fml  = y.hum ~ log(gdp_donor) + log(pop_donor) + log(gdp_recip) + log(pop_recip),
   tvar = year,
   ivar = id,
   gvar = g.name,
@@ -142,8 +137,7 @@ plot(etwfe)
 
 ```
 
-
-
+# IN PROGRESS
 
 ```{r att_bin_stagg_res}
 
@@ -317,16 +311,6 @@ etable(res.glm)
 # (Imputation PPML)
 # 
 ```
-
-
-
-
-
-
-
-
-
-
 
 ## Overall
 

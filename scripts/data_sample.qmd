@@ -27,6 +27,179 @@ load(file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\outcome
 >
 > NOTE(2): same question as above for the definition of the observation window.
 
+# Multiple Dummies On (MDO)
+
+Define panel data
+
+```{r treatment}
+
+df <- data_treat |> 
+  select(iso3c, year, d.name = dis_dummy)
+```
+
+Create last leads and lags
+
+```{r}
+
+df.l <- df |> 
+  mutate(
+    # create leads
+    f2_d = lead(d.name, 2, order_by = year),
+    f1_d = lead(d.name, 1, order_by = year),
+    # create lags
+    l1_d = lag(d.name, 1, order_by = year),
+    l2_d = lag(d.name, 2, order_by = year),
+    l3_d = lag(d.name, 3, order_by = year),
+    l4_d = lag(d.name, 4, order_by = year),
+    l5_d = lag(d.name, 5, order_by = year),
+    .by = iso3c
+  )
+```
+
+For a balanced panel of the dependent variable from $[\underline{t}, \overline{t}]$ and a limited effect window $[\underline{j}, \overline{j}]$, we need to observe events from $\underline{t} − \overline{j} + 1$ to $\overline{t} + |\underline{j}| − 1$.
+
+```{r}
+
+# function for reverse cumulative sum of vector
+revcumsum <- function(x) {
+  rev(cumsum(rev(x)))
+}
+
+# generate binned endpoints
+treatment <- df.l |> 
+  # define estimation sample
+  filter(year %in% 2006:2016) |> 
+  # as suggested by , the unobserved 3rd lead of the treatment adoption indicator for 2016 can be set to an arbitrary value, # e.g. zero.
+#  mutate(f2_d = ifelse(year==2015, 0, f4_d)) |> 
+    mutate(
+    l5bin_d = ave(l5_d, iso3c, FUN = cumsum), # lags
+    f2bin_d = ave(f2_d, iso3c, FUN = revcumsum) # leads
+         )
+
+```
+
+Define panel dyadic data
+
+```{r outcome}
+
+outcome <- data_outcome_hum |> 
+  select(donor_id, cohort_donor, recipient_id, cohort_recipient, 
+         year, 
+         sector_hum, 
+         y.name = commit_total) |> 
+    summarize(
+    y.hum = sum(y.name[sector_hum=="Humanitarian"], na.rm = T),
+    y.dev = sum(y.name[sector_hum!="Humanitarian"], na.rm = T),
+    .by = c("donor_id", "recipient_id", "year"))
+```
+
+Merge treatment and outcome samples
+
+```{r}
+
+# sample
+df_es_bin <- data_unit |> 
+  # merge treatment
+  left_join(treatment, by = c("iso3c", "year")) |> 
+  # merge outcome
+  left_join(outcome, by = c("donor_id", "recipient_id", "year")) |> 
+  # create ID unit variable
+  mutate(id = paste0(donor_id, sep = "_", recipient_id)) |> 
+  relocate(id, .before = year) |> 
+  # order rows
+  arrange(donor_id, recipient_id, year) |> 
+  # define as panel
+  panel(~id+year)
+```
+
+Add covariates
+
+```{r}
+
+df_es_bin_cov <- df_es_bin |> 
+  # rename iso3c
+  rename(iso3c_recip = iso3c) |> 
+  # add iso3c
+  mutate(iso3c_donor = countrycode(sourcevar = donor_name,
+                             origin = "country.name",
+                             destination = "iso3c",
+                             warn = T)) |> 
+  mutate(iso3c_donor = ifelse(donor_name=="EU Institutions", "EUR", iso3c_donor)) |> 
+  relocate(iso3c_donor, .before = donor_id) |> 
+  # add gdp
+  mutate(iso3c = iso3c_recip) |> # recip
+  left_join(data_gdp, by = c("iso3c", "year")) |> 
+  rename(gdp_recip = gdp) |> 
+  mutate(iso3c = iso3c_donor) |> #donor
+  left_join(data_gdp, by = c("iso3c", "year")) |> 
+  rename(gdp_donor = gdp) |> 
+  # add pop
+  left_join(data_pop, by = c("iso3c", "year")) |> # donor
+  rename(pop_donor = pop) |> 
+  mutate(iso3c = iso3c_recip) |> # recip
+  left_join(data_pop, by = c("iso3c", "year")) |>  
+  rename(pop_recip = pop) |> 
+  select(-iso3c) |> 
+  # remove recipients with no gdp data
+  filter(!any(is.na(gdp_recip)), .by = recipient_id)
+
+# gdp data missing for several SIDS and conflict-afflicted countries (Afghanistan, Somalia)
+# some missing pop data for Kosovo and SDIS (UN Pop Prospect as potential complement)
+# no missing data for donors
+
+# n_distinct(df_es_bin_top_cov$donor_id)*n_distinct(df_es_bin_top_cov$recipient_id)*n_distinct(df_es_bin_top_cov$year)
+```
+
+Run regression
+
+```{r}
+
+res = feols(data = df_es_bin,
+      log(y.hum+.001) ~ 
+        f2bin_d + f1_d +
+        d.name + 
+        l1_d + l2_d + l3_d + l4_d + l5bin_d |
+        id + year + donor_id^year,
+      subset = df_es_bin$year >= 2006 & df_es_bin$year <= 2016,
+      cluster = ~id
+      )
+
+coeftable <- res$coeftable
+```
+
+```{r}
+
+table <- data.table(
+  time_to_treatment = c(-3:6), 
+  coef = c(coeftable[1:2,1],   # leads
+           0,                           # reference period
+           coeftable[3:9,1]),  # lags
+  se = c(coeftable[1:2,2],  # leads
+         0,                          # reference period
+         coeftable[3:9,2])) # lags
+table
+
+```
+
+```{r}
+
+ggplot(table, aes(x = time_to_treatment, y = coef)) +
+  geom_line(color = "darkblue") +
+  geom_point(color = "darkblue") +
+  geom_errorbar(aes(ymin = coef - 1.96*se, ymax = coef + 1.96*se), width=.1,
+                color = "darkblue") +
+  geom_hline(yintercept = 0) + 
+  geom_vline(xintercept = -0.5, linetype = "dashed") +
+  scale_x_continuous(breaks = c(-3:6)) +
+  xlab(paste0("Year relative to disaster \n Observations: ", nobs(res))) +
+  scale_y_continuous(limits=c(-0.06, 0.15), breaks = seq(-0.06, 0.15, by = 0.02)) +
+  ylab("Effect on log bilateral ODA") +
+  theme_classic()
+
+```
+
+# IN PROGRESS
+
 # Binarize and staggerize
 
 ## Event-Study
@@ -154,11 +327,13 @@ df_es_bin_top_cov <- df_es_bin_top |>
   rename(pop_recip = pop) |> 
   select(-iso3c) |> 
   # remove recipients with no gdp data
-  filter(!all(is.na(gdp_recip)), .by = recipient_id)
+  filter(!any(is.na(gdp_recip)), .by = recipient_id)
 
 # gdp data missing for several SIDS and conflict-afflicted countries (Afghanistan, Somalia)
 # some missing pop data for Kosovo and SDIS (UN Pop Prospect as potential complement)
 # no missing data for donors
+
+# n_distinct(df_es_bin_top_cov$donor_id)*n_distinct(df_es_bin_top_cov$recipient_id)*n_distinct(df_es_bin_top_cov$year)
 
 ```
 

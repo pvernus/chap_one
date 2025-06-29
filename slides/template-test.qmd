@@ -1,0 +1,316 @@
+---
+title: The impact of climate-realted disasters on aid delivery
+subtitle: CERDI Phd Seminar
+date: today
+date-format: 2025-07-03
+image: static/img/thumbnail.svg
+author:
+  - name: Paul Vernus
+format:
+  clean-typst:
+    bibliographystyle: "chicago-author-date"
+    include-in-header: "custom.typ"
+    commands: [small-cite]
+execute: 
+  echo: false
+  warning: false
+brand:
+  typography: 
+    fonts: 
+      - family: Roboto
+        source: google
+        weight: [light, bold]
+        style: [normal, italic]
+    base:
+      family: Roboto
+      weight: light
+    headings: Roboto
+knitr:
+  opts_chunk: 
+    fig.align: center
+    dev: svg
+bibliography: references.bib
+---
+
+# Introduction
+
+## Motivation
+
+### Climate-related disastrous extreme events
+
+### Aid policy
+
+-   donor-side: need-governance trade-off [@bourguignon2020[; @bourguignon2022]{.small-cite}]
+
+    -   internal discipline: population -\> leader
+    
+        -   e.g. political system
+        
+    -   external discipline: donor -\> leader
+    
+        -   e.g. implicit conditionality in the mode/channel of delivery [@raschky2012[; @dietrich2013; @knack2014]{.small-cite}]
+        
+    -   substitution effect between internal/external disciplines
+
+-   recipient-side: control over resources
+
+    -   Design
+
+    -   influence over domestic policy/reforms
+
+    -   e.g., budget support, project-type interventions, etc.
+
+    -   Implementation
+
+        -   technical control over aid resources
+        -   e.g. (non-)State channels of delivery
+
+**Aid policy (comprise)** = outcome of the negotiations between donor agencies and recipient governments [@mosley2012[; @swedlund2017]{.small-cite}] on the aid volume *and* delivery/composition
+
+## Research question
+
+**What is the effect of climate-related disasters on the aid policy (compromise)?**
+
+## This Paper
+
+### What I do
+
+-   Suggest an aid policy (compromise) framework to jointly analyze aid volume and composition
+
+-   Use dyadic bilateral ODA development and humanitarian flows in a non-linear setting, w/ non-negative, skewed, and mass at zero data.
+
+-   Adopt a non-parametric multiple event study approach to characterize the dynamic treatment effects (DTE), semi-elasticity
+
+-   Build a global -weighted- multi-hazard exposure index aggregated at the country-year level
+
+### What I find
+
+...
+
+# Related literature
+
+## Related literature
+
+### Political economy post-disaster foreign aid disbursements
+
+-   Focus on how (international) political economy factors impact government responsiveness
+
+Yang, 2008; David, 2011;
+
+### Climate economics
+
+-   Global hazard measure [@dellmuth2021{.small-cite}]
+
+### Multiple treatment
+
+### Non-linear estimators
+
+-   
+
+# Conceptual framework
+
+## Conceptual framework
+
+-   Cross-table design/implementation
+
+-   OR tree/DAG
+
+# Data and descriptive statistics
+
+## Data
+
+### Outcome
+
+-   source: OECD CRS project-level
+
+-   window: report channels since 2004
+
+### Treatment
+
+-   source: EMDAT/GDIS
+
+-   Event window: (i) Under-reporting before 2000, (ii) no geocoded data after 2018
+
+-   Aggregate all the types of disasters at a yearly frequency to build a country-level indicator, Disaster, that takes the value of 1 if country i experienced at least one disaster in year t, and 0 otherwise.
+
+## Descriptive statistics
+
+### Outcome: official Development Assistance (ODA)
+
+-   non-negative, skewed, mass at zero -\> non-linear
+
+-   extensive margin
+
+### Treatment: Disasters
+
+-   Treatment status graph
+
+### Treatment: Disasters
+
+-   Multiple 'on-off' (non-absorbing) treatments
+
+    -   Potential carryover effects ($D_{t-n} \Rightarrow Y_t$)
+    
+-   Many potential 'always-treated' units
+
+-   Relatively few 'never-treated'
+
+-   Treatment heterogeneity, e.g., sudden-onset vs. slow-onset events
+
+-   Non-binary treatment, cf. hazard intensity/severity
+
+### Treatment: Disaster intensity
+
+-   Follow approach suggested by [@dellmuth2021{.small-cite}]
+
+    -   Link grid-level climate data to geocoded disaster locations at ADM1-level
+    
+        -   Baseline distribution of gridded daily weather variables (1980-today)
+        
+        -   Extreme event = daily weather value \> 95th percentile baseline distribution
+        
+        -   Intensity = frequency of daily extreme events per year
+        
+        -   Average grid-level yearly intensity measures at ADM1-level disaster location
+        
+-   Finally, aggregate disaster locations at the country-year level with a (population-)weighted sum
+
+    -   Alternative weighting scheme: grid-level
+    
+    -   Alternative exposure variable: population density, agricultural land and/or built-up area
+    
+-   n.b. Similar approach than in other single-hazard studies in climate economics (e.g., 'degree-days')
+
+# Empirical stragegy
+
+## Empirical strategy
+
+I follow a similar approach as [@bettin2025{.small-cite}]
+
+-   Exploit the exogenous nature of disasters
+
+-   Non-parametric event study specification [@dobkin2018{.small-cite}]
+
+    -   flexibly assess the pattern of outcomes relative to the time-to-treatment
+    
+-   Multiple Dummies On (MDO) approach [@sandler2014a{.small-cite}]
+
+    -   Multiple event-time dummies are taken on at once
+    
+    -   in a given period can respond to multiple disasters with overlapping effect windows
+    
+-   Binned endpoints to defined the *effect window* [@schmidheiny2023{.small-cite}]
+
+    -   Assume that treatment effects remain constant outside the chosen t-year window
+    
+    -   control for both past and future treatments
+
+Main differences
+
+-   Dyadic outcome variables observed each year (donor-recipient-year units)
+
+-   Non-linear setting (Binomial "Logit", PPML)
+
+-   **effect window** as an open interval with
+
+    -   Assume that the effect of disasters does not vanish but remains constant outside the chosen t-year window
+    
+    -   control for both past and future disasters
+
+### Example: Effect window matrix
+
+*Table*
+
+### Alternative approach
+
+-   DID “binarize and staggerize” [@dechaisemartin2024[; @deryugina2017a]{.small-cite}]
+
+    -   staggered DiD procedure according to first-time of treatment exposure
+    
+    -   Advantage: no 'carryover' assumption
+    
+    -   Inconvenient:
+    
+        -   loss of information (single binary 'first-time' treatment)
+        
+        -   rely on 'never-treated' groups as controls
+
+### Empirical specification: static
+
+-   Dyadic setting with country-specific treatment
+
+-   Follow [@faye2012[; @arezki2025]{.small-cite}]
+
+$$ODA_{drt} = \delta DIS_{rt} + X'_{drt} \beta + \alpha_{dr} + \epsilon_{drt}$$ $ODA_{drt}$: commitment ODA from donor *d* to recipient *r* at year *t*
+
+$DIS_{rt}$: dummy that takes 1 if country r has any climate-related disasters in year t or the value of the hazard intensity index
+
+$X'_{drt}$: a vector of (i) time-varying donor or recipient specific control variables, such as GDP and population, or (ii) year or donor-year fixed effects
+
+$\alpha_{dr}$: a vector of donor-recipient country pair fixed effects
+
+### Empirical specification: Event study
+
+Timeline
+
+Bar graph: freq obs. (y-axis), year (y-axis)
+
+-   Effect window from $\underline{m} = -5$ to $\overline{m} = 5$.
+
+-   Treatment window: 2001:2018
+
+-   Outcome window: 2004:2023
+
+-   Limit to external validity
+
+-   Relevant period
+
+    -   2008-09: financial crisis (supply constraints)
+    
+    -   2009-2010: ENSO (increasing demand)
+
+$$Y_{drt} = \sum_{m=\underline{m}}^{\overline{m}} \beta_m 
+\mathbb{B}^{m}_{rt} + \sum_{z \in Z} \beta_z X_{Z_{drt}} + \alpha_{dr} + \tau_t + \epsilon_{drt}$$
+
+where $\mathbb{B}^{m}_{rt}$ is the disaster indicator binned at the endpoints, such that:
+
+\$\$ \mathbb{B}\^{m}\_{rt}=
+
+\begin{Bmatrix}
+\sum_{k=t+\underline{m}}^{\overline{t_s} + \underline{m}-1} \mathbb{D}^{m}_{rk} & if & m = \underline{m} \\ 
+\mathbb{D}^{m}_{rt} & if & \underline{m} < m < \overline{m} \\
+\sum_{k=\underline{t_s}-\overline{m}+1}^{t-\overline{m}} \mathbb{D}^{m}_{rk} & if & m = \overline{m}
+\end{Bmatrix}
+
+\$\$
+
+# Results
+
+## Results
+
+## Robustness checks
+
+## Heterogeneity
+
+-   nature of the disaster:
+
+    -   sudden-onset / slow-onset disasters
+    
+    -   hydrological, meteorological, climatological
+
+-   International political alignment
+
+-   Domestic political (alignment)
+
+# Conclusion
+
+## Conclusion
+
+{{< appendix >}}
+
+# Appendix
+
+## References
+
+::: {#refs}
+:::
