@@ -31,51 +31,171 @@ load(file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\outcome
 
 Define panel data
 
-```{r treatment}
+```{r treat}
 
-df <- data_treat |> 
-  select(iso3c, year, d.name = dis_dummy)
+df.dis <- data_treat |> 
+  select(iso3c, year, d.name = dis_dummy, value_max) |> 
+  mutate(index = ifelse(d.name>0, value_max, 0)) |> 
+  select(-value_max)
+
+df.dis.q4 <- data_treat_rank |> 
+  select(country, iso3c, year, quantile_rank) |> 
+  mutate(d.q4 = replace_na(ifelse(quantile_rank==4, 1, 0), 0)) |> 
+  select(iso3c, year, d.q4)
+
+df.treat <- merge(df.dis, df.dis.q4, by = c("iso3c", "year")) |> 
+  mutate(index_q4 = ifelse(d.q4>0, index, 0))
 ```
 
 Create last leads and lags
 
-```{r}
+```{r treat.es.bin}
 
-df.l <- df |> 
+df.treat.es.bin <- df.treat |> 
   mutate(
     # create leads
-    f2_d = lead(d.name, 2, order_by = year),
-    f1_d = lead(d.name, 1, order_by = year),
+    d.f3 = lead(d.name, 3, order_by = year),
+    d.f2 = lead(d.name, 2, order_by = year),
+    d.f1 = lead(d.name, 1, order_by = year),
     # create lags
-    l1_d = lag(d.name, 1, order_by = year),
-    l2_d = lag(d.name, 2, order_by = year),
-    l3_d = lag(d.name, 3, order_by = year),
-    l4_d = lag(d.name, 4, order_by = year),
-    l5_d = lag(d.name, 5, order_by = year),
+    d.l1 = lag(d.name, 1, order_by = year),
+    d.l2 = lag(d.name, 2, order_by = year),
+    d.l3 = lag(d.name, 3, order_by = year),
+    d.l4 = lag(d.name, 4, order_by = year),
+    d.l5 = lag(d.name, 5, order_by = year),
+    d.l6 = lag(d.name, 6, order_by = year),
+    d.l7 = lag(d.name, 7, order_by = year),
+    d.l8 = lag(d.name, 8, order_by = year),
+    .by = iso3c
+  )
+```
+
+```{r treat.es.index}
+
+df.treat.es.index <- df.treat |> 
+  mutate(
+    # create leads
+    d.f3 = lead(index, 3, order_by = year),
+    d.f2 = lead(index, 2, order_by = year),
+    d.f1 = lead(index, 1, order_by = year),
+    # create lags
+    d.l1 = lag(index, 1, order_by = year),
+    d.l2 = lag(index, 2, order_by = year),
+    d.l3 = lag(index, 3, order_by = year),
+    d.l4 = lag(index, 4, order_by = year),
+    d.l5 = lag(index, 5, order_by = year),
+    d.l6 = lag(index, 6, order_by = year),
+    d.l7 = lag(index, 7, order_by = year),
+    d.l8 = lag(index, 8, order_by = year),
+    .by = iso3c
+  )
+```
+
+```{r treat.es.index_q4}
+
+df.treat.es.index_q4 <- df.treat |> 
+  mutate(
+    # create leads
+    d.f3 = lead(index_q4, 3, order_by = year),
+    d.f2 = lead(index_q4, 2, order_by = year),
+    d.f1 = lead(index_q4, 1, order_by = year),
+    # create lags
+    d.l1 = lag(index_q4, 1, order_by = year),
+    d.l2 = lag(index_q4, 2, order_by = year),
+    d.l3 = lag(index_q4, 3, order_by = year),
+    d.l4 = lag(index_q4, 4, order_by = year),
+    d.l5 = lag(index_q4, 5, order_by = year),
+    d.l6 = lag(index_q4, 6, order_by = year),
+    d.l7 = lag(index_q4, 7, order_by = year),
+    d.l8 = lag(index_q4, 8, order_by = year),
     .by = iso3c
   )
 ```
 
 For a balanced panel of the dependent variable from $[\underline{t}, \overline{t}]$ and a limited effect window $[\underline{j}, \overline{j}]$, we need to observe events from $\underline{t} − \overline{j} + 1$ to $\overline{t} + |\underline{j}| − 1$.
 
-```{r}
+```{r revcumsum}
 
 # function for reverse cumulative sum of vector
 revcumsum <- function(x) {
   rev(cumsum(rev(x)))
 }
+```
+
+```{r treat.es.bin.endp}
 
 # generate binned endpoints
-treatment <- df.l |> 
-  # define estimation sample
-  filter(year %in% 2006:2016) |> 
-  # as suggested by , the unobserved 3rd lead of the treatment adoption indicator for 2016 can be set to an arbitrary value, # e.g. zero.
+df.treat.es.bin.endp <- df.treat.es.bin |> 
+  mutate(across(starts_with("d."), ~ replace_na(.x, 0))) |> 
+# as suggested by , the unobserved 3rd lead of the treatment adoption indicator for 2016 can be set to an arbitrary value, # e.g. zero.
 #  mutate(f2_d = ifelse(year==2015, 0, f4_d)) |> 
     mutate(
-    l5bin_d = ave(l5_d, iso3c, FUN = cumsum), # lags
-    f2bin_d = ave(f2_d, iso3c, FUN = revcumsum) # leads
+    d.l8bin = ave(d.l8, iso3c, FUN = cumsum), # lags
+    d.f3bin = ave(d.f3, iso3c, FUN = revcumsum) # leads
          )
 
+```
+
+```{r treat.es.index.endp}
+
+# generate binned endpoints
+df.treat.es.index.endp <- df.treat.es.index |> 
+  mutate(across(starts_with("d."), ~ replace_na(.x, 0))) |> 
+# as suggested by , the unobserved 3rd lead of the treatment adoption indicator for 2016 can be set to an arbitrary value, # e.g. zero.
+#  mutate(f2_d = ifelse(year==2015, 0, f4_d)) |> 
+    mutate(
+    d.l8bin = ave(d.l8, iso3c, FUN = cumsum), # lags
+    d.f3bin = ave(d.f3, iso3c, FUN = revcumsum) # leads
+         )
+```
+
+```{r}
+
+# generate binned endpoints
+df.treat.es.index_q4.endp <- df.treat.es.index_q4 |> 
+  mutate(across(starts_with("d."), ~ replace_na(.x, 0))) |> 
+# as suggested by , the unobserved 3rd lead of the treatment adoption indicator for 2016 can be set to an arbitrary value, # e.g. zero.
+#  mutate(f2_d = ifelse(year==2015, 0, f4_d)) |> 
+    mutate(
+    d.l8bin = ave(d.l8, iso3c, FUN = cumsum), # lags
+    d.f3bin = ave(d.f3, iso3c, FUN = revcumsum) # leads
+         )
+```
+
+Add covariates
+
+```{r covs}
+
+df.region <- data_region |> 
+  mutate(
+    asia = ifelse(region_agg=="Asia", 1, 0),
+    africa = ifelse(region_agg=="Africa", 1, 0),
+    lac = ifelse(region_agg=="LAC", 1, 0),
+  ) |> 
+  select(iso3c, region_agg, asia, africa, lac)
+
+```
+
+Merge covariates to define treatment sample
+
+```{r treatment.bin}
+
+treatment.bin <- left_join(df.treat.es.bin.endp, df.region, by = "iso3c") |> 
+  left_join(data_gdp, by = c("iso3c", "year")) |> 
+  left_join(data_pop, by = c("iso3c", "year"))
+#  filter(!any(is.na(gdp) | is.na(pop)), .by = iso3c)
+
+# n_distinct(df.test$iso3c) * n_distinct(df.test$year)
+```
+
+```{r treatment.index}
+
+treatment.index <- left_join(df.treat.es.index.endp, df.region, by = "iso3c")
+```
+
+```{r treatment.index_q4}
+
+treatment.index_q4 <- left_join(df.treat.es.index_q4.endp, df.region, by = "iso3c")
 ```
 
 Define panel dyadic data
@@ -83,7 +203,7 @@ Define panel dyadic data
 ```{r outcome}
 
 outcome <- data_outcome_hum |> 
-  select(donor_id, cohort_donor, recipient_id, cohort_recipient, 
+  select(donor_id, recipient_id, 
          year, 
          sector_hum, 
          y.name = commit_total) |> 
@@ -93,12 +213,26 @@ outcome <- data_outcome_hum |>
     .by = c("donor_id", "recipient_id", "year"))
 ```
 
+```{r outcome.hum}
+
+outcome_hum <- data_outcome_hum |> 
+  select(donor_id:year, iso3c, commit_total:commit_nonstate, commit_total_dummy:commit_nonstate_dummy)
+```
+
 Merge treatment and outcome samples
 
-```{r}
+```{r df.es.bin}
 
 # sample
 df_es_bin <- data_unit |> 
+  # filter out later comers
+  filter(!(cohort_donor > 2008 | cohort_recipient > 2008)) |>
+  # select vars
+  select(donor_id, donor_name, recipient_id, recipient_name, iso3c, year) |> 
+  # define estimation sample
+  filter(year %in% 2008:2015) |>
+  # add time trend
+  mutate(t = year - min(year) + 1) |> 
   # merge treatment
   left_join(treatment, by = c("iso3c", "year")) |> 
   # merge outcome
@@ -110,94 +244,388 @@ df_es_bin <- data_unit |>
   arrange(donor_id, recipient_id, year) |> 
   # define as panel
   panel(~id+year)
+
+# n_distinct(df_es_bin$id) * n_distinct(df_es_bin$year)
 ```
 
-Add covariates
+```{r df.es.bin.hum}
 
-```{r}
-
-df_es_bin_cov <- df_es_bin |> 
-  # rename iso3c
-  rename(iso3c_recip = iso3c) |> 
-  # add iso3c
-  mutate(iso3c_donor = countrycode(sourcevar = donor_name,
-                             origin = "country.name",
-                             destination = "iso3c",
-                             warn = T)) |> 
-  mutate(iso3c_donor = ifelse(donor_name=="EU Institutions", "EUR", iso3c_donor)) |> 
-  relocate(iso3c_donor, .before = donor_id) |> 
-  # add gdp
-  mutate(iso3c = iso3c_recip) |> # recip
-  left_join(data_gdp, by = c("iso3c", "year")) |> 
-  rename(gdp_recip = gdp) |> 
-  mutate(iso3c = iso3c_donor) |> #donor
-  left_join(data_gdp, by = c("iso3c", "year")) |> 
-  rename(gdp_donor = gdp) |> 
-  # add pop
-  left_join(data_pop, by = c("iso3c", "year")) |> # donor
-  rename(pop_donor = pop) |> 
-  mutate(iso3c = iso3c_recip) |> # recip
-  left_join(data_pop, by = c("iso3c", "year")) |>  
-  rename(pop_recip = pop) |> 
-  select(-iso3c) |> 
-  # remove recipients with no gdp data
-  filter(!any(is.na(gdp_recip)), .by = recipient_id)
-
-# gdp data missing for several SIDS and conflict-afflicted countries (Afghanistan, Somalia)
-# some missing pop data for Kosovo and SDIS (UN Pop Prospect as potential complement)
-# no missing data for donors
-
-# n_distinct(df_es_bin_top_cov$donor_id)*n_distinct(df_es_bin_top_cov$recipient_id)*n_distinct(df_es_bin_top_cov$year)
+df_es_bin.hum <- data_unit_hum |> 
+  # filter out later comers
+  filter(!(cohort_donor > 2008 | cohort_recipient > 2008)) |>  
+  select(donor_id, donor_name, recipient_id, recipient_name, iso3c, sector_hum, year) |> 
+  filter(sector_hum!="Other") |> 
+  # define estimation sample
+  filter(year %in% 2008:2015) |>  
+  # add time trend
+  mutate(t = year - min(year) + 1) |> 
+  # merge treatment
+  left_join(treatment.bin, by = c("iso3c", "year")) |> 
+  # merge outcome
+  left_join(outcome_hum, by = c("donor_id", "recipient_id", "sector_hum", "year")) |>   
+  # create ID unit variable
+  mutate(id = paste0(donor_id, sep = "_", recipient_id)) |> 
+  relocate(id, .before = year) |> 
+  # order rows
+  arrange(donor_id, recipient_id, year)
 ```
 
-Run regression
+```{r df.es.index.hum}
 
-```{r}
+df_es_index.hum <- data_unit_hum |> 
+  # filter out later comers
+  filter(!(cohort_donor > 2008 | cohort_recipient > 2008)) |>  
+  select(donor_id, donor_name, recipient_id, recipient_name, iso3c, sector_hum, year) |> 
+  filter(sector_hum!="Other") |> 
+  # define estimation sample
+  filter(year %in% 2008:2015) |>  
+  # add time trend
+  mutate(t = year - min(year) + 1) |> 
+  # merge treatment
+  left_join(treatment.index, by = c("iso3c", "year")) |> 
+  # merge outcome
+  left_join(outcome_hum, by = c("donor_id", "recipient_id", "sector_hum", "year")) |>   
+  # create ID unit variable
+  mutate(id = paste0(donor_id, sep = "_", recipient_id)) |> 
+  relocate(id, .before = year) |> 
+  # order rows
+  arrange(donor_id, recipient_id, year)
+```
+
+```{r df.es.index_q4.hum}
+
+df_es_index_q4.hum <- data_unit_hum |> 
+  # filter out later comers
+  filter(!(cohort_donor > 2008 | cohort_recipient > 2008)) |>  
+  select(donor_id, donor_name, recipient_id, recipient_name, iso3c, sector_hum, year) |> 
+  filter(sector_hum!="Other") |> 
+  # define estimation sample
+  filter(year %in% 2008:2015) |>  
+  # add time trend
+  mutate(t = year - min(year) + 1) |> 
+  # merge treatment
+  left_join(treatment.index_q4, by = c("iso3c", "year")) |> 
+  # merge outcome
+  left_join(outcome_hum, by = c("donor_id", "recipient_id", "sector_hum", "year")) |>   
+  # create ID unit variable
+  mutate(id = paste0(donor_id, sep = "_", recipient_id)) |> 
+  relocate(id, .before = year) |> 
+  # order rows
+  arrange(donor_id, recipient_id, year)
+```
+
+# Run regressions
+
+## Binary treatment
+
+```{r ols.dev}
 
 res = feols(data = df_es_bin,
-      log(y.hum+.001) ~ 
-        f2bin_d + f1_d +
+      log(y.dev+.001) ~ 
+        d.f3bin + d.f2 +
         d.name + 
-        l1_d + l2_d + l3_d + l4_d + l5bin_d |
-        id + year + donor_id^year,
-      subset = df_es_bin$year >= 2006 & df_es_bin$year <= 2016,
+        d.l1 + d.l2 + d.l3 + d.l4 + d.l5 + d.l6 + d.l7 + d.l8bin |
+      id + year + csw0(donor_id^year, recipient_id[t], asia^year + africa^year + lac^year),
       cluster = ~id
       )
 
-coeftable <- res$coeftable
+etable(res)
+
+res_named <- setNames(res, c(
+  "Fixed Effects: DR + Y",
+  "Fixed Effects: DR + Y + DY", 
+  "Fixed Effects: DR + Y + DY + R[t]", 
+  "Fixed Effects: DR + Y + DY + R[t] + Reg-Y")
+  )
+
+ggfixest::ggcoefplot(res_named,
+                     main = "Effect on Development ODA (log)",
+                     drop = "^log", 
+                     group = list(Pre = "d.f", Post = "d.l"),
+                     ci_level = c(0.8, 0.95),
+                     ci.width = .1,
+                     zero.par = list(lty = 2, col = "green")
+                     ) + 
+  labs(subtitle = "Normalization f1 = 0")
 ```
+
+```{r pois.dev}
+
+res = fepois(data = df_es_bin,
+      y.dev ~ 
+        d.f3bin + d.f2 +
+        d.name + 
+        d.l1 + d.l2 + d.l3 + d.l4 + d.l5 + d.l6 + d.l7 + d.l8bin |
+      id + year + csw0(donor_id^year, recipient_id[t], asia^year + africa^year + lac^year),
+      cluster = ~id
+      )
+
+etable(res)
+
+res_named <- setNames(res, c(
+  "Fixed Effects: DR + Y",
+  "Fixed Effects: DR + Y + DY", 
+  "Fixed Effects: DR + Y + DY + R[t]", 
+  "Fixed Effects: DR + Y + DY + R[t] + Reg-Y")
+  )
+
+ggfixest::ggcoefplot(res_named,
+                     main = "Effect on Development ODA (PPML)",
+                     drop = "^log", 
+                     group = list(Pre = "d.f", Post = "d.l"),
+                     ci_level = c(0.8, 0.95),
+                     ci.width = .1,
+                     zero.par = list(lty = 2, col = "green")
+                     ) + 
+  labs(subtitle = "Normalization f1 = 0")
+```
+
+```{r ols.hum}
+
+res = feols(data = df_es_bin,
+      log(y.hum+.001) ~ 
+        d.f3bin + d.f2 +
+        d.name + 
+        d.l1 + d.l2 + d.l3 + d.l4 + d.l5 + d.l6 + d.l7 + d.l8bin |
+      id + year + csw0(donor_id^year, recipient_id[t], asia^year + africa^year + lac^year),
+      cluster = ~id
+      )
+
+etable(res)
+
+res_named <- setNames(res, c(
+  "Fixed Effects: DR + Y",
+  "Fixed Effects: DR + Y + DY", 
+  "Fixed Effects: DR + Y + DY + R[t]", 
+  "Fixed Effects: DR + Y + DY + R[t] + Reg-Y")
+  )
+
+ggfixest::ggcoefplot(res_named,
+                     main = "Effect on Humanitarian ODA (log)",
+                     drop = "^log", 
+                     group = list(Pre = "d.f", Post = "d.l"),
+                     ci_level = c(0.8, 0.95),
+                     ci.width = .1,
+                     zero.par = list(lty = 2, col = "green")
+                     ) + 
+  labs(subtitle = "Normalization f1 = 0")
+```
+
+```{r pois.hum}
+
+res = fepois(data = df_es_bin,
+      y.hum ~ 
+        d.f3bin + d.f2 +
+        d.name + 
+        d.l1 + d.l2 + d.l3 + d.l4 + d.l5 + d.l6 + d.l7 + d.l8bin |
+      id + year + csw0(donor_id^year, recipient_id[t], asia^year + africa^year + lac^year),
+      cluster = ~id
+      )
+
+etable(res)
+
+res_named <- setNames(res, c(
+  "Fixed Effects: DR + Y",
+  "Fixed Effects: DR + Y + DY", 
+  "Fixed Effects: DR + Y + DY + R[t]", 
+  "Fixed Effects: DR + Y + DY + R[t] + Reg-Y")
+  )
+
+ggfixest::ggcoefplot(res_named,
+                     main = "Effect on Humanitarian ODA (PPML)",
+                     drop = "^log", 
+                     group = list(Pre = "d.f", Post = "d.l"),
+                     ci_level = c(0.8, 0.95),
+                     ci.width = .1,
+                     zero.par = list(lty = 2, col = "green")
+                     ) + 
+  labs(subtitle = "Normalization f1 = 0")
+```
+
+```{r ols.regFEs}
+res = feols(data = df_es_bin,
+      c(log(y.hum+.001), log(y.dev+.001)) ~ 
+        d.f3bin + d.f2 +
+        d.name + 
+        d.l1 + d.l2 + d.l3 + d.l4 + d.l5 + d.l6 + d.l7 + d.l8bin |
+      id + year + donor_id^year + recipient_id[t] + csw0(asia^year + africa^year + lac^year),
+      cluster = ~id
+      )
+
+etable(res)
+
+res_no_regFE <- setNames(res[1:2], c(
+  "Y=Hum & No Region-Year FEs",
+  "Y=Dev & No Region-Year FEs"
+))
+res_regFE <- setNames(res[3:4], c(
+  "Y=Hum & Region-Year FEs",
+  "Y=Dev & Region-Year FEs"
+))
+
+# W/out Regional-YEar FEs
+ggfixest::ggcoefplot(res_no_regFE,
+                     main = "Effect on Humanitarian/Development ODA (log)",
+                     group = list(Pre = "d.f", Post = "d.l"),
+                     ci_level = c(0.8, 0.95),
+                     ci.width = .1,
+                     zero.par = list(lty = 2, col = "green")
+                     ) + 
+  labs(subtitle = "Normalization f1 = 0")
+
+# W/ Regional-Year FEs
+ggfixest::ggcoefplot(res_regFE,
+                     main = "Effect on Humanitarian/Development ODA (log)",
+                     group = list(Pre = "d.f", Post = "d.l"),
+                     ci_level = c(0.8, 0.95),
+                     ci.width = .1,
+                     zero.par = list(lty = 2, col = "green")
+                     ) + 
+  labs(subtitle = "Normalization f1 = 0")
+```
+
+```{r ols.design}
+
+res = feols(data = df_es_bin.hum,
+      c(log(commit_budg+.001), log(commit_proj+.001), log(commit_total+.001)) ~ 
+        d.f3bin + d.f2 +
+        d.name + 
+        d.l1 + d.l2 + d.l3 + d.l4 + d.l5 + d.l6 + d.l7 + d.l8bin |
+      id + year + donor_id^year + recipient_id[t] + asia^year + africa^year + lac^year,
+      cluster = ~id,
+      split = ~sector_hum
+      )
+
+ggfixest::ggcoefplot(res,
+                     main = "Effect on Design",
+                     group = list(Pre = "d.f", Post = "d.l"),
+                     multi_style = "facet",
+                     ci_level = c(0.8, 0.95),
+                     ci.width = .1,
+                     zero.par = list(lty = 2, col = "green")
+                     ) + 
+  labs(subtitle = "Normalization f1 = 0") + 
+  theme(legend.position = "none")
+```
+
+```{r ols.impl}
+
+res = feols(data = df_es_bin.hum,
+      c(log(commit_state+.001), log(commit_nonstate+.001), log(commit_total+.001)) ~ 
+        d.f3bin + d.f2 +
+        d.name + 
+        d.l1 + d.l2 + d.l3 + d.l4 + d.l5 + d.l6 + d.l7 + d.l8bin |
+      id + year + donor_id^year + recipient_id[t] + asia^year + africa^year + lac^year,
+      cluster = ~id,
+      split = ~sector_hum
+      )
+
+ggfixest::ggcoefplot(res,
+                     main = "Effect on Implementation",
+                     group = list(Pre = "d.f", Post = "d.l"),
+                     multi_style = "facet",
+                     ci_level = c(0.8, 0.95),
+                     ci.width = .1,
+                     zero.par = list(lty = 2, col = "green")
+                     ) + 
+  labs(subtitle = "Normalization f1 = 0") + 
+  theme(legend.position = "none")
+```
+
+```{r glm}
+
+res = feglm(family = binomial("logit"),
+            data = df_es_bin.hum,
+      commit_total_dummy ~ 
+        d.f3bin + d.f2 +
+        d.name + 
+        d.l1 + d.l2 + d.l3 + d.l4 + d.l5 + d.l6 + d.l7 + d.l8bin |
+      id + year + donor_id^year + recipient_id[t],
+      cluster = ~id,
+      split = ~sector_hum
+      )
+
+# csw0(donor_id^year + recipient_id[t], asia^year + africa^year + lac^year)
+
+etable(res)
+
+res_named <- setNames(res, c(
+  "Fixed Effects: DR + Y",
+  "Fixed Effects: DR + Y + DY", 
+  "Fixed Effects: DR + Y + DY + R[t]", 
+  "Fixed Effects: DR + Y + DY + R[t] + Reg-Y")
+  )
+
+ggfixest::ggcoefplot(res,
+                     main = "Effect on Humanitarian ODA (PPML)",
+                     group = list(Pre = "d.f", Post = "d.l"),
+                     multi_style = "facet",
+                     ci_level = c(0.8, 0.95),
+                     ci.width = .1,
+                     zero.par = list(lty = 2, col = "green")
+                     ) + 
+  labs(subtitle = "Normalization f1 = 0")
+```
+
+## Continuous treatment
 
 ```{r}
 
-table <- data.table(
-  time_to_treatment = c(-3:6), 
-  coef = c(coeftable[1:2,1],   # leads
-           0,                           # reference period
-           coeftable[3:9,1]),  # lags
-  se = c(coeftable[1:2,2],  # leads
-         0,                          # reference period
-         coeftable[3:9,2])) # lags
-table
+res = feols(data = df_es_index.hum,
+      log(commit_total+.001) ~ 
+        d.f3bin + d.f2 +
+        index + 
+        d.l1 + d.l2 + d.l3 + d.l4 + d.l5 + d.l6 + d.l7 + d.l8bin |
+      id + year + donor_id^year + recipient_id[t] + asia^year + africa^year + lac^year,
+      cluster = ~id,
+      split = ~sector_hum
+      )
 
+ggfixest::ggcoefplot(res,
+                     main = "Effect on Total commitments (continuous treatment)",
+                     group = list(Pre = "d.f", Post = "d.l"),
+                     multi_style = "facet",
+                     ci_level = c(0.8, 0.95),
+                     ci.width = .1,
+                     zero.par = list(lty = 2, col = "green")
+                     ) + 
+  labs(subtitle = "Normalization f1 = 0") + 
+  theme(legend.position = "none")
 ```
+
+## Largest treatment
+
+### Binary treatment
 
 ```{r}
 
-ggplot(table, aes(x = time_to_treatment, y = coef)) +
-  geom_line(color = "darkblue") +
-  geom_point(color = "darkblue") +
-  geom_errorbar(aes(ymin = coef - 1.96*se, ymax = coef + 1.96*se), width=.1,
-                color = "darkblue") +
-  geom_hline(yintercept = 0) + 
-  geom_vline(xintercept = -0.5, linetype = "dashed") +
-  scale_x_continuous(breaks = c(-3:6)) +
-  xlab(paste0("Year relative to disaster \n Observations: ", nobs(res))) +
-  scale_y_continuous(limits=c(-0.06, 0.15), breaks = seq(-0.06, 0.15, by = 0.02)) +
-  ylab("Effect on log bilateral ODA") +
-  theme_classic()
-
 ```
 
+### Continuous treatment
+
+```{r}
+
+res = feols(data = df_es_index_q4.hum,
+      log(commit_total+.001) ~ 
+        d.f3bin + d.f2 +
+        index_q4 + 
+        d.l1 + d.l2 + d.l3 + d.l4 + d.l5 + d.l6 + d.l7 + d.l8bin |
+      id + year + donor_id^year + recipient_id[t] + asia^year + africa^year + lac^year,
+      cluster = ~id,
+      split = ~sector_hum
+      )
+
+ggfixest::ggcoefplot(res,
+                     main = "Effect on Y (Largest continuous treatment)",
+                     group = list(Pre = "d.f", Post = "d.l"),
+                     multi_style = "facet",
+                     ci_level = c(0.8, 0.95),
+                     ci.width = .1,
+                     zero.par = list(lty = 2, col = "green")
+                     ) + 
+  labs(subtitle = "Normalization f1 = 0") + 
+  theme(legend.position = "none")
+```
 # IN PROGRESS
 
 # Binarize and staggerize
@@ -410,7 +838,6 @@ df_att_quantile_stagg |>
   vis_miss(sort_miss = T)
 
 ```
-
 
 ## Static treatment effects, multiple treatment (onset), single dose (staggered), same intensity (binary), total commitments
 
