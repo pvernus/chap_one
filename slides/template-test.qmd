@@ -36,52 +36,55 @@ bibliography: references.bib
 
 ## Motivation
 
+-   
+
 ### Climate-related disastrous extreme events
 
-### Aid policy
+-   Already high costs of climate-related disasters, especially in LMICs
 
--   donor-side: need-governance trade-off [@bourguignon2020[; @bourguignon2022]{.small-cite}]
+-   Gap between what gov. in affected countries expect and what they actually receive, both in terms of volume and type of aid
 
-    -   internal discipline: population -\> leader
-    
-        -   e.g. political system
-        
-    -   external discipline: donor -\> leader
-    
+### The Political economy of disaster responses
+
+-   Disasters act as exogenous shocks to the strategic interactions between donors and recipients
+
+-   Provide the donor a window of opportunity to pursue its own strategic interests [@cheng2021; @arezki2025]
+
+-   Produce incentives for recipient leaders seeking international/domestic reputation [@grossman2024]
+
+### Domestic politics and Aid policy
+
+-   Besides aid volume, aid *delivery* is also used as a tool for foreign influence
+
+-   Theoretical framework: need-governance trade off [@bourguignon2020[; @bourguignon2022]{.small-cite}]
+
+    -   external discipline: donor ➝ leader
+
         -   e.g. implicit conditionality in the mode/channel of delivery [@raschky2012[; @dietrich2013; @knack2014]{.small-cite}]
-        
-    -   substitution effect between internal/external disciplines
 
--   recipient-side: control over resources
+    -   internal discipline: population ➝ leader
 
-    -   Design
+        -   e.g. political system [@flores2013; @cole2012]
 
-    -   influence over domestic policy/reforms
+-   How do exogenous shocks impact donor–government relations at the recipient-country level?
 
-    -   e.g., budget support, project-type interventions, etc.
-
-    -   Implementation
-
-        -   technical control over aid resources
-        -   e.g. (non-)State channels of delivery
-
-**Aid policy (comprise)** = outcome of the negotiations between donor agencies and recipient governments [@mosley2012[; @swedlund2017]{.small-cite}] on the aid volume *and* delivery/composition
+**Aid policy (compromise)** = outcome of the negotiations between donor agencies and recipient governments [@mosley2012[; @swedlund2017]{.small-cite}] on the aid volume *and* delivery/composition
 
 ## Research question
 
-**What is the effect of climate-related disasters on the aid policy (compromise)?**
+**How do exogenous shocks such as climate-related disasters impact donor–government relations through aid policy at the recipient-country level? Does post-disaster aid delivery react to domestic politics?**
 
 ## This Paper
 
 ### What I do
 
--   Suggest an aid policy (compromise) framework to jointly analyze aid volume and composition
+-   Look at the effect of exogenous shocks on the delegation of authority/control over aid flows
 
--   Use dyadic bilateral ODA development and humanitarian flows in a non-linear setting, w/ non-negative, skewed, and mass at zero data.
+-   Combine development and humanitarian ODA from bilateral and multilateral providers in a dyadic panel setting
 
--   Adopt a non-parametric multiple event study approach to characterize the dynamic treatment effects (DTE), semi-elasticity
+-   Use gridded data to build a global measure of exposure to disastrous weather and climate extreme events, aggregated at the country-year level
 
--   Build a global -weighted- multi-hazard exposure index aggregated at the country-year level
+-   Adopt a non-parametric multiple event study to characterize the dynamic treatment effects (DTE) of recurring "on-off" events
 
 ### What I find
 
@@ -97,15 +100,13 @@ bibliography: references.bib
 
 Yang, 2008; David, 2011;
 
-### Climate economics
+### Climate econometrics
 
--   Global hazard measure [@dellmuth2021{.small-cite}]
+-   Use more granular data (°0.5) and follow up-to-date methodology to Global multi-hazard measure with more granular data [@dellmuth2021{.small-cite}]
 
-### Multiple treatment
+### Multiple event study approach
 
-### Non-linear estimators
-
--   
+-   To my knowledge, first application to a dyadic panel setting
 
 # Conceptual framework
 
@@ -150,7 +151,7 @@ Yang, 2008; David, 2011;
 -   Multiple 'on-off' (non-absorbing) treatments
 
     -   Potential carryover effects ($D_{t-n} \Rightarrow Y_t$)
-    
+
 -   Many potential 'always-treated' units
 
 -   Relatively few 'never-treated'
@@ -164,21 +165,21 @@ Yang, 2008; David, 2011;
 -   Follow approach suggested by [@dellmuth2021{.small-cite}]
 
     -   Link grid-level climate data to geocoded disaster locations at ADM1-level
-    
+
         -   Baseline distribution of gridded daily weather variables (1980-today)
-        
+
         -   Extreme event = daily weather value \> 95th percentile baseline distribution
-        
+
         -   Intensity = frequency of daily extreme events per year
-        
+
         -   Average grid-level yearly intensity measures at ADM1-level disaster location
-        
+
 -   Finally, aggregate disaster locations at the country-year level with a (population-)weighted sum
 
     -   Alternative weighting scheme: grid-level
-    
+
     -   Alternative exposure variable: population density, agricultural land and/or built-up area
-    
+
 -   n.b. Similar approach than in other single-hazard studies in climate economics (e.g., 'degree-days')
 
 # Empirical stragegy
@@ -192,17 +193,17 @@ I follow a similar approach as [@bettin2025{.small-cite}]
 -   Non-parametric event study specification [@dobkin2018{.small-cite}]
 
     -   flexibly assess the pattern of outcomes relative to the time-to-treatment
-    
+
 -   Multiple Dummies On (MDO) approach [@sandler2014a{.small-cite}]
 
     -   Multiple event-time dummies are taken on at once
-    
+
     -   in a given period can respond to multiple disasters with overlapping effect windows
-    
+
 -   Binned endpoints to defined the *effect window* [@schmidheiny2023{.small-cite}]
 
     -   Assume that treatment effects remain constant outside the chosen t-year window
-    
+
     -   control for both past and future treatments
 
 Main differences
@@ -214,7 +215,7 @@ Main differences
 -   **effect window** as an open interval with
 
     -   Assume that the effect of disasters does not vanish but remains constant outside the chosen t-year window
-    
+
     -   control for both past and future disasters
 
 ### Example: Effect window matrix
@@ -226,13 +227,13 @@ Main differences
 -   DID “binarize and staggerize” [@dechaisemartin2024[; @deryugina2017a]{.small-cite}]
 
     -   staggered DiD procedure according to first-time of treatment exposure
-    
+
     -   Advantage: no 'carryover' assumption
-    
+
     -   Inconvenient:
-    
+
         -   loss of information (single binary 'first-time' treatment)
-        
+
         -   rely on 'never-treated' groups as controls
 
 ### Empirical specification: static
@@ -266,7 +267,7 @@ Bar graph: freq obs. (y-axis), year (y-axis)
 -   Relevant period
 
     -   2008-09: financial crisis (supply constraints)
-    
+
     -   2009-2010: ENSO (increasing demand)
 
 $$Y_{drt} = \sum_{m=\underline{m}}^{\overline{m}} \beta_m 
@@ -274,7 +275,7 @@ $$Y_{drt} = \sum_{m=\underline{m}}^{\overline{m}} \beta_m
 
 where $\mathbb{B}^{m}_{rt}$ is the disaster indicator binned at the endpoints, such that:
 
-\$\$ \mathbb{B}\^{m}\_{rt}=
+$$ \mathbb{B}^{m}_{rt}=
 
 \begin{Bmatrix}
 \sum_{k=t+\underline{m}}^{\overline{t_s} + \underline{m}-1} \mathbb{D}^{m}_{rk} & if & m = \underline{m} \\ 
@@ -282,7 +283,7 @@ where $\mathbb{B}^{m}_{rt}$ is the disaster indicator binned at the endpoints, s
 \sum_{k=\underline{t_s}-\overline{m}+1}^{t-\overline{m}} \mathbb{D}^{m}_{rk} & if & m = \overline{m}
 \end{Bmatrix}
 
-\$\$
+$$
 
 # Results
 
@@ -295,7 +296,7 @@ where $\mathbb{B}^{m}_{rt}$ is the disaster indicator binned at the endpoints, s
 -   nature of the disaster:
 
     -   sudden-onset / slow-onset disasters
-    
+
     -   hydrological, meteorological, climatological
 
 -   International political alignment

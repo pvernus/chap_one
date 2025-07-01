@@ -29,6 +29,10 @@ load(file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\outcome
 
 # Multiple Dummies On (MDO)
 
+## Data
+
+### Treatment
+
 Define panel data
 
 ```{r treat}
@@ -162,6 +166,8 @@ df.treat.es.index_q4.endp <- df.treat.es.index_q4 |>
          )
 ```
 
+### Covariates
+
 Add covariates
 
 ```{r covs}
@@ -198,6 +204,8 @@ treatment.index <- left_join(df.treat.es.index.endp, df.region, by = "iso3c")
 treatment.index_q4 <- left_join(df.treat.es.index_q4.endp, df.region, by = "iso3c")
 ```
 
+### Outcome
+
 Define panel dyadic data
 
 ```{r outcome}
@@ -219,12 +227,46 @@ outcome_hum <- data_outcome_hum |>
   select(donor_id:year, iso3c, commit_total:commit_nonstate, commit_total_dummy:commit_nonstate_dummy)
 ```
 
+### Estimation sample
+
 Merge treatment and outcome samples
+
+```{r}
+
+load(file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\outcome\\data_crs.RData")
+
+# list bilateral vs. multilateral donors
+multi <- data_crs |> 
+  distinct(donor_id, donor_code) |>
+  mutate(multi = ifelse(donor_code == 104 | donor_code %in% 800:1500 & !donor_code %in% c(801, 820, 918), 1, 0)) |> 
+  select(-donor_code)
+
+# rank top donors
+top_donor <- data_outcome |> 
+  filter(year %in% 2008:2015) |> 
+  summarize(total = sum(commit_total, na.rm = T), .by = c(donor_id, donor_name)) |> 
+  arrange(desc(total)) |>
+  left_join(multi, by = "donor_id") |> 
+#  filter(multi<1) |>
+  mutate(rank = rank(-total, ties.method = "min"),
+         cumdis = cumsum(total) / sum(total)) |>  
+  # keep donors in top20 in eith hum *or* dev
+  filter(rank <= 20)
+
+# filter for top donors only
+df_es_bin_top <- df_es_bin |> 
+  mutate(top = ifelse(donor_id %in% rank_donor$donor_id, 1, 0)) |> 
+  filter(top>0) |> 
+  select(-top)
+```
+
 
 ```{r df.es.bin}
 
 # sample
 df_es_bin <- data_unit |> 
+  # filter for top donor
+  filter(donor_name %in% top_donor$donor_name) |> 
   # filter out later comers
   filter(!(cohort_donor > 2008 | cohort_recipient > 2008)) |>
   # select vars
@@ -424,14 +466,7 @@ res = fepois(data = df_es_bin,
 
 etable(res)
 
-res_named <- setNames(res, c(
-  "Fixed Effects: DR + Y",
-  "Fixed Effects: DR + Y + DY", 
-  "Fixed Effects: DR + Y + DY + R[t]", 
-  "Fixed Effects: DR + Y + DY + R[t] + Reg-Y")
-  )
-
-ggfixest::ggcoefplot(res_named,
+ggfixest::ggcoefplot(res,
                      main = "Effect on Humanitarian ODA (PPML)",
                      drop = "^log", 
                      group = list(Pre = "d.f", Post = "d.l"),
@@ -545,16 +580,7 @@ res = feglm(family = binomial("logit"),
       split = ~sector_hum
       )
 
-# csw0(donor_id^year + recipient_id[t], asia^year + africa^year + lac^year)
-
 etable(res)
-
-res_named <- setNames(res, c(
-  "Fixed Effects: DR + Y",
-  "Fixed Effects: DR + Y + DY", 
-  "Fixed Effects: DR + Y + DY + R[t]", 
-  "Fixed Effects: DR + Y + DY + R[t] + Reg-Y")
-  )
 
 ggfixest::ggcoefplot(res,
                      main = "Effect on Humanitarian ODA (PPML)",

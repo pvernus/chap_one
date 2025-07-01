@@ -1,0 +1,318 @@
+---
+title: Beg or Bargain? The domestic politics of foreign aid delivery in response to climate-related disasters
+subtitle: CERDI Phd Seminar
+date: today
+date-format: 2025-07-03
+image: static/img/thumbnail.svg
+author:
+  - name: Paul Vernus
+format:
+  clean-typst:
+    bibliographystyle: "chicago-author-date"
+    include-in-header: "custom.typ"
+    commands: [small-cite]
+html-math-method:
+  method: mathjax
+  url: "https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"
+execute: 
+  echo: false
+  warning: false
+brand:
+  typography: 
+    fonts: 
+      - family: Roboto
+        source: google
+        weight: [light, bold]
+        style: [normal, italic]
+    base:
+      family: Roboto
+      weight: light
+    headings: Roboto
+knitr:
+  opts_chunk: 
+    fig.align: center
+    dev: svg
+bibliography: references.bib
+---
+
+# Introduction
+
+## Motivation
+
+-   *Frequency and intensity* of climate extremes will *rise*, even at +1.5°C [[@ipcc2023c]]{.small-cite}
+-   Already major *losses and damages*, especially in LMICs
+-   Allocation/Access to foreign aid for *relief and reconstruction* is a contested issue
+-   *Two-level* bargaining game (donor ⟷ leader ⟷ civil society)
+
+::: callout-tip
+## Research question
+
+-   **What is the effect of climate-related disastrous extreme events on post-disaster aid delivery?**
+
+-   **Does domestic politics play a role in shaping the international response?**
+:::
+
+## This Paper
+
+### What I do
+
+-   Look at the effect of exogenous shocks (disasters) on aid delivery
+-   Use *dyadic panel* data of bilateral and multilateral aid flows
+-   Build a global measure of *exposure to hazard intensity* at the country-year level
+-   Estimate *dynamic* effects through an event study approach
+-   Test whether *state-society relations* in recipient country influence aid delivery
+
+### What I find
+
+-   TBC
+
+## Related literature
+
+**Post-disaster foreign aid allocation** [[@yang2008; @david2011; @becerra2014; @arezki2025]]{.small-cite}
+
+::: small-font
+-   Look at aid volume and aid *composition*
+-   Use a global multi-hazard measure of *physical* exposure
+-   Consider recipient's *domestic political economy* factors
+:::
+
+**Aid composition** [[@raschky2012; @dietrich2013; @knack2014]]{.small-cite}
+
+::: small-font
+-   Estimate *dynamic* effects of exogenous shocks
+-   Consider both *design* and *implementation* dimensions
+-   Look at the impact on different *types* of aid
+:::
+
+## Conceptual framework
+
+-   Mostly donor-centered mechanisms suggested in the empirical literature
+
+::: {style="font-size: 16pt"}
+*e.g., perception of needs/capacity, strategic interests, etc.*
+:::
+
+-   No/Low domestic agency in the recipient country (most often) assumed
+
+### Domestic politics and Aid policy
+
+-   External discipline: donor ➝ leader [[@bourguignon2022]]{.small-cite}
+
+::: {style="font-size: 16pt"}
+*e.g. conditionality in the mode/channel of delivery* [[@raschky2012; @dietrich2013; @knack2014]]{.small-cite}
+:::
+
+-   [Internal discipline]{.alert}: population ➝ leader
+
+::: {style="font-size: 16pt"}
+*e.g. political system* [[@flores2013; @cole2012]]{.small-cite}
+:::
+
+-   Substitution effect between internal/external discipline [[@bourguignon2020]]{.small-cite}
+
+# Data
+
+## Data
+
+### Outcomes
+
+-   *Source*: project-level OECD Creditor Reporting System (CRS), 2000-present
+
+-   Official Development Assistance (ODA) commitments, constant US\$
+
+-   **Design** *(Policy influence)*: co-operation modalities
+
+    -   Debt relief and Budgetary support, core/pooled contributions, project-type interventions
+
+-   **Implementation** *(Technical control)*: channels of delivery
+
+    -   State vs. non-State (NGOs, multilateral, private sector)
+
+-   *Sample*: Top 20 (bilateral/multilateral) donors in humanitarian or development ODA
+
+## Data {#sec-data-treatment}
+
+### Treatment
+
+-   *Source*: EMDAT/GDIS
+-   Climate-related hazards [[@ipcc2023c]]{.small-cite}
+    -   sudden-onset: wet (heavy rainfall, floods), windy (storms)
+    -   slow-onset: dry (droughts), hot (extreme temperature)
+
+[[Time]{.button}](#sec-treatment-time)
+
+[[Geography]{.button}](#sec-treatment-geo)
+
+[[Time x Geography]{.button}](#sec-treatment-status)
+
+## Data
+
+### Treatment: Exposure to hazard intensity
+
+Follow approach suggested by @dellmuth2021
+
+-   Link gridded climate data to ADM1-level geocoded disaster locations
+    -   Baseline distribution (1980-today) of grid-level daily weather variables
+    -   Extreme event = daily weather value \> 95th percentile baseline distribution
+    -   Intensity = frequency of daily extreme events per year
+    -   Average grid-level yearly intensity measures at ADM1-level disaster location
+-   Finally, aggregate disaster locations at the country-year level with a (population-)weighted sum
+-   n.b. Similar approach than in other single-hazard studies in climate econometrics (e.g., 'degree-days')
+
+## Data
+
+Source: the Varieties of Democracy (V-DEM) dataset
+
+### State capacity
+
+-   index by @oreilly2022
+-   Four dimensions:
+    1.  fiscal capacity,
+    2.  a state's control over its territory,
+    3.  the rule of law
+    4.  the provision of public goods used to support markets
+-   Similar as @arezki2025
+
+### Political regime
+
+# Empirical stragegy
+
+## Main challenges for identification
+
+### Treatment
+
+-   Multiple recurring 'on-off' (non-absorbing) events
+-   Carryover effects ($D_{t-n} \Rightarrow Y_t$)
+-   Non-binary treatment, cf. hazard intensity
+-   Treatment heterogeneity, e.g., sudden-onset vs. slow-onset events
+
+### Outcome
+
+-   Non-normal distribution: non-negative, skewed, many zeroes (extensive margin) [[@chen2024]]{.small-cite}
+
+## Indentification strategy {#sec-identification}
+
+Follow a similar approach as @bettin2025
+
+-   Exploit the exogenous nature of disasters
+-   Non-parametric event study specification [[@dobkin2018]]{.small-cite}
+-   Multiple Dummies On (MDO) approach [[@sandler2014]]{.small-cite}
+    -   Multiple event-time dummies are taken on at once
+    -   Adapted to overlapping effect windows
+-   Binned endpoints to defined the *effect window* [[@schmidheiny2023]]{.small-cite}
+    -   Assume constant treatment effects outside the window (stabilization period)
+    -   Obs. outside the effect window are considered as controls [[Appendix]{.button}](#sec-effect-window)
+
+## Empirical stragegy
+
+### Empirical specification: Event study (1)
+
+$$Y_{drt} = \sum_{m=\underline{m}}^{\overline{m}} \beta_m 
+\mathbb{B}^{m}_{rt} + \sum_{z \in Z} \beta_z X_{Z_{drt}} + \alpha_{dr} + \tau_t + \epsilon_{drt}$$
+
+$Y_{drt}$: (log) ODA commitments from donor *d* to recipient *r* at year *t*
+
+$\mathbb{B}^{m}_{rt}$: the disaster indicator binned at the endpoints $[\underline{m};\overline{m}]$
+
+$X'_{drt}$: donor-year, region-year fixed effects, and recipient-specific linear trends
+
+-   *Potential confounders: global and regional climate dynamics, local land-use changes*
+
+$\alpha_{dr}$: donor-recipient pair fixed effects
+
+$\tau_t$: year fixed effects
+
+# Results
+
+## Baseline results
+
+-   *Not included yet*
+
+## Mechanisms
+
+-   State capacity
+
+-   Domestic political regime
+
+-   State capacity / Political regime
+
+-   (Conflict)
+
+-   (International political alignment)
+
+## Heterogeneity
+
+-   Nature of the disaster:
+    -   sudden-onset / slow-onset disasters
+    -   hydrological, meteorological, climatological
+-   Bilateral/Multilateral donors
+-   Recipient income groups
+-   Channels of delivery: NGO, Multi., Private
+
+## Robustness checks
+
+### Treatment
+
+-   **Deviation cut-off** (non-linearity assumption): use the 90^th^ or 99^th^ percentiles
+-   **Baseline climate** (climate belief assumption): 20-year or 30-year
+-   **Weighting scheme**: grid-level
+
+### Outcome
+
+-   **Amount**: ODA disbursements
+-   **Proportions**: ODA % of total
+
+### Estimation
+
+-   **Effect window length**: stabilization period
+-   **Absorbing treatment**: single first-treated cohorts [[@deryugina2017a]]{.small-cite}, 'largest' treatment cohorts
+-   **Estimators**: imputation/counterfactual estimators [[@borusyak2024a; @liu2024a]]{.small-cite}, TWFE PPML
+
+# Conclusion
+
+## Conclusion
+
+-   TBC
+
+{{< appendix >}}
+
+# Appendix {#sec-appendix}
+
+##  {#sec-treatment-time}
+
+![](img/dis_time_freq.png){#fig-dis-time fig-align="center" width="65%"}
+
+[[Back](#sec-data-treatment)]{.button}
+
+##  {#sec-treatment-geo}
+
+![](img/dis_geo_freq.png){#fig-dis-geo fig-align="center" width="65%"}
+
+[[Back](#sec-data-treatment)]{.button}
+
+##  {#sec-treatment-status}
+
+![](img/treatment_status_all.png){fig-align="center" width="55%"}
+
+[[Back](#sec-data-treatment)]{.button}
+
+## Empirical stragegy
+
+### Example: Effect window matrix
+
+*Table*
+
+## Effect window {#sec-effect-window}
+
+![Effect window](img/timeline_mdo_large.png){fig-align="center"}
+
+-   **Effect window**: $[\underline{m} = -2 ; \overline{m} = +7]$
+
+-   **Estimation sample**: 2008-2015
+
+[[Back](#sec-identification)]{.button}
+
+## References
+
+::: {#refs}
+:::

@@ -1,0 +1,375 @@
+---
+title: | 
+  | Beg or Bargain?
+  | The impact of climate extreme events on aid allocation
+subtitle: CERDI PhD Seminar
+format:
+  clean-revealjs:
+    self-contained: true
+html-math-method:
+  method: mathjax
+  url: "https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"
+author:
+  - name: Paul Vernus
+date: last-modified
+bibliography: references.bib
+# suppress-bibliography: true
+editor: 
+  markdown: 
+    wrap: sentence
+---
+
+## Motivation
+
+-   *Frequency and intensity* of climate extremes will *rise*, even at +1.5°C [@ipcc2023c]
+-   Already major *losses and damages*, especially in LMICs
+-   Lack of *coordination* between relief and reconstruction efforts
+-   Potential detrimental impacts on recipient aid *ownership*
+
+::::: fragment
+::: callout-tip
+## Research question
+
+**What is the effect of climate-related extreme events on post-disaster aid allocation?**
+:::
+
+::: small-font
+-   **Extreme events** = wet (heavy rainfall, floods), dry (droughts), hot (extreme temperature), windy (storms) climate impact-drivers [@ipcc2023c]
+:::
+:::::
+
+## This Paper
+
+**What I do**:
+
+-   Look at the effect of exogenous shocks such as disasters on the delegation of authority/control over aid flows
+
+-   Use gridded data to build a global measure of exposure to disastrous weather and climate extreme events, aggregated at the country-year level
+
+-   Estimate *dynamic* effects of disasters
+
+-   Test whether *state-society relations* in the recipient country influence post-disaster aid allocation
+
+**What I find**:
+
+-   TBC
+
+## Related literature
+
+**Post-disaster foreign aid allocation** [@yang2008; @david2011; @becerra2014; @arezki2025]
+
+::: small-font
+-   Look at both aid volume *and* composition (modalities/design and channels of delivery/implementation)
+-   Combine development/humanitarian ODA from bilateral and multilateral providers
+-   Use *physical* multi-hazard severity measures
+-   Consider recipient's *leader strategic behavior* as potential mechanisms
+:::
+
+**Aid composition** [@raschky2012; @dietrich2013; @knack2014]
+
+::: small-font
+-   Study *dynamic* effect of time-varying treatment
+-   Combine aid design and implementation phases
+:::
+
+**Physical hazard severity measures** [@felbermayr2014; @dellmuth2021]
+
+::: small-font
+-   Use *more granular* data (daily precipitation 0.5°)
+-   Follow up-to-date recommendations from climate econometrics [@carleton2024a; @rising2020]
+:::
+
+## Conceptual framework (option 1)
+
+-   Empirical results find overall positive impacts of disasters on aid
+    -   Humanitarian \> Development [@arezki2025]
+    -   non-State \> State channels of delivery [@raschky2012]
+
+::: fragment
+-   Mostly donor-centered mechanisms suggested in the literature,
+    -   *e.g., perception of needs, strategic interests, donor coordination, etc.*
+:::
+
+::: fragment
+-   However, situations where cost of accepting aid \> opportunity cost of rejecting aid
+    -   *Domestic*: low political accountability [@flores2013], punish domestic opponents [@dewaal2017]
+    -   *International*: influence donors’ perceptions of the leader’s competence [@grossman2024], demonstrate self-sufficiency [@carnegie2021], limit foreign influence [@aidt2021]
+:::
+
+## Conceptual framework (option 2)
+
+### The Political economy of disaster responses
+
+-   Disasters act as exogenous shocks to donor-recipient strategic interactions
+-   Provide donor a window of opportunity to pursue its own strategic interests [@cheng2021; @arezki2025]
+-   Produce incentives for recipient leaders seeking international/domestic reputation [@grossman2024]
+
+## Domestic politics and Aid policy
+
+-   Theoretical framework: need-governance trade off [@bourguignon2020; @bourguignon2022]
+    -   external discipline: donor ➝ leader
+
+    -   e.g. implicit conditionality in the mode/channel of delivery [@raschky2012; @dietrich2013; @knack2014]
+
+    -   internal discipline: population ➝ leader
+
+    -   e.g. political system [@flores2013; @cole2012]
+
+## Data and descriptive statistics
+
+### Outcomes
+
+::: small-font
+Source: OECD Creditor Reporting System (CRS), 2000-present
+:::
+
+::: fragment
+-   **Amount**: Official Development Assistance (ODA) yearly commitments, in million, constant US\$
+:::
+
+::: fragment
+-   **Design** *(Policy influence)*: % of ODA by modality category
+    -   Budgetary support, core/pooled contributions, project-type interventions (incl. TA)
+:::
+
+::: fragment
+-   **Implementation** *(Technical control)*: % of ODA by channel of delivery
+    -   State vs. non-State (NGOs, multilateral, private sector)
+:::
+
+-   *non-negative, skewed, mass at zero (extensive margin)*
+
+## Data and descriptive statistics
+
+### Treatment: geographic distribution
+
+*left panel: stacked bar graph of the frequency of events by disaster category*
+
+*right panel: bar graph frequency of events by countries*
+
+Source: EMDAT/GDIS
+
+## Data and descriptive statistics
+
+### Treatment: time distribution
+
+*To include: Treatment status graph*
+
+### Treatment
+
+-   Multiple 'on-off' (non-absorbing) treatments
+
+    -   Potential carryover effects ($D_{t-n} \Rightarrow Y_t$)
+
+-   Many potential 'always-treated' units
+
+-   Relatively few 'never-treated'
+
+-   Treatment heterogeneity, e.g., sudden-onset vs. slow-onset events
+
+-   Non-binary treatment, cf.
+    hazard intensity/severity
+
+### Treatment: Disaster intensity
+
+-   Follow approach suggested by [@dellmuth2021{.small-cite}]
+
+    -   Link grid-level climate data to ADM1-level geocoded disaster locations
+
+        -   Baseline distribution of gridded daily weather variables (1980-today)
+
+        -   Extreme event = daily weather value \> 95th percentile baseline distribution
+
+        -   Intensity = frequency of daily extreme events per year
+
+        -   Average grid-level yearly intensity measures at ADM1-level disaster location
+
+-   Finally, aggregate disaster locations at the country-year level with a (population-)weighted sum
+
+    -   Alternative weighting scheme: grid-level
+
+    -   Alternative exposure variable: population density, agricultural land and/or built-up area
+
+-   n.b.
+    Similar approach than in other single-hazard studies in climate economics (e.g., 'degree-days')
+
+## Empirical stragegy
+
+### Indentification strategy
+
+I follow a similar approach as [@bettin2025{.small-cite}]
+
+-   Exploit the exogenous nature of disasters
+
+-   Non-parametric event study specification [@dobkin2018{.small-cite}]
+
+    -   flexibly assess the pattern of outcomes relative to the time-to-treatment
+
+-   Multiple Dummies On (MDO) approach [@sandler2014a{.small-cite}]
+
+    -   Multiple event-time dummies are taken on at once
+
+    -   in a given period can respond to multiple disasters with overlapping effect windows
+
+-   Binned endpoints to defined the *effect window* [@schmidheiny2023{.small-cite}]
+
+    -   Assume that treatment effects remain constant outside the chosen t-year window
+
+        -   cf. stabilization period
+
+    -   control for both past and future treatments
+
+        -   obs. outside the effect window are considered as controls
+
+## Empirical stragegy
+
+### Example: Effect window matrix (Appendix)
+
+*Table*
+
+## Empirical stragegy
+
+### Effect window (Appendix)
+
+*Add Timeline*
+
+-   Effect window from $\underline{m} = -5$ to $\overline{m} = 5$.
+
+-   Treatment window: 2001:2018
+
+-   Outcome window: 2004:2023
+
+-   Limit to external validity
+
+-   Relevant period
+
+    -   2008-09: financial crisis (supply constraints)
+
+    -   2009-2010: ENSO (increasing demand)
+
+## Empirical stragegy
+
+### Empirical specification: Event study
+
+$$Y_{drt} = \sum_{m=\underline{m}}^{\overline{m}} \beta_m 
+\mathbb{B}^{m}_{rt} + \sum_{z \in Z} \beta_z X_{Z_{drt}} + \alpha_{dr} + \tau_t + \epsilon_{drt}$$
+
+where
+
+$Y_{drt}$: ODA commitments from donor *d* to recipient *r* at year *t*
+
+$X'_{drt}$: a vector of year, donor-year, region-year fixed effects, and recipient-specific linear trends
+
+$\alpha_{dr}$: a vector of donor-recipient country pair fixed effects
+
+$\mathbb{B}^{m}_{rt}$ is the disaster indicator binned at the endpoints, such that:
+
+\$\$ \mathbb{B}\^{m}\_{rt}=
+
+\begin{Bmatrix}
+\sum_{k=t+\underline{m}}^{\overline{t_s} + \underline{m}-1} \mathbb{D}^{m}_{rk} & if & m = \underline{m} \\ 
+\mathbb{D}^{m}_{rt} & if & \underline{m} < m < \overline{m} \\
+\sum_{k=\underline{t_s}-\overline{m}+1}^{t-\overline{m}} \mathbb{D}^{m}_{rk} & if & m = \overline{m}
+\end{Bmatrix}
+
+\$\$
+
+N.b. Potential confounders: global and regional climate dynamics, local land-use changes
+
+# Results
+
+## Results
+
+## Robustness checks
+
+## Heterogeneity
+
+-   nature of the disaster:
+
+    -   sudden-onset / slow-onset disasters
+
+    -   hydrological, meteorological, climatological
+
+-   International political alignment
+
+-   Domestic political (alignment)
+
+# Conclusion
+
+## Conclusion
+
+## Robustness checks
+
+### Treatment
+
+::: small-font
+✓ **Deviation cut-off** (non-linearity assumption): use the 90^th^ or 99^th^ percentiles
+
+⨉ **Time-scale**: construct *year*-specific or *month*-specific distributions instead of day-specific
+
+⨉ **Baseline climate** (climate belief assumption): choose 20-year or 30-year long historical norms
+:::
+
+### Outcome
+
+::: small-font
+⨉ **Amount**: ODA disbursements
+
+⨉ **Proportions**: ODA % of total
+:::
+
+### Estimation
+
+::: small-font
+✓ **Lag length (stabilization period)**
+
+✓ **Absorbing**: single (first-treated cohorts) [@deryugina2017a]
+
+✓ **Estimators**: (*linear*) counterfactual/imputation estimators [@borusyak2024a; @liu2024a]
+
+⨉ **Multinomial models**: alternative estimators, e.g., fractional multinomial logit model [@negi2024], SCM for Proportions (multinomial link) [@bogatyrev2025]
+:::
+
+## Heterogeneity
+
+### Treatment
+
+::: small-font
+⨉ **Exposure**: agricultural land, built-up area, nightlight
+
+⨉ **Weighting scheme**: grid-level
+:::
+
+### Outcome
+
+::: small-font
+⨉ **Channels of delivery**: NGO, Multi., Private
+
+⨉ **Financial instruments**: grants vs. loans
+
+⨉ **Donors**: bilateral vs. multilateral
+:::
+
+### Recipient country
+
+::: small-font
+✓ **Gov. responsiveness**: State of Emergency and/or request for international assistance
+
+⨉ **Domestic politics**: political regime and internal social conflict
+
+⨉ **Resources**: income group, government's fiscal and institutional capacity, Chinese aid
+:::
+
+## Conclusion
+
+-   Study post-disaster aid allocation
+    -   Consider wet/dry climate extremes (floods/droughts)
+    -   Estimate dynamic effect on aid volume and composition
+-   TBC
+
+# Annexes
+
+## References
+
+::: {#refs}
+:::

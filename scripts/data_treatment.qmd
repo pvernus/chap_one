@@ -45,6 +45,22 @@ df <- data_severity |>
 
 ```
 
+```{r}
+
+cols <- c("drought" = "#9E3D22FF", "extreme temperature" = "#F69035FF", "flood" = "#77ACD3FF", "storm" = "#2B5C8AFF")
+
+df |> 
+  summarize(n = length(disasterno), .by = c(year, disaster_type_gdis)) |> 
+  arrange(year) |> 
+  ggplot(aes(x = year, y = n, fill = disaster_type_gdis)) +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values = cols) +
+  theme_light() +
+  labs(x="Year", y = "Frequency", fill = "Type",
+       title = "Climate-related disasters across time",
+       caption = "Source: GDIS")
+```
+
 ```{r density_disaster_type}
 #| eval: false
 
@@ -145,6 +161,35 @@ data_treat <- left_join(data_iso3c_year, df.dis, by = c("iso3c", "year")) |>
     )
 ```
 
+```{r}
+#| eval: false
+
+load(file = "C:\\Users\\pauvernu\\Seafile\\library\\chap_one_data\\data\\covariate\\data_covariate.RData")
+
+df <- merge(data_treat, data_region, by = "iso3c")
+
+df |> 
+  select(country, region = region_agg, year, dis_dummy) |> 
+  summarize(
+    year = max(year) - min(year) + 1,
+    freq = sum(dis_dummy, na.rm = T),
+    .by = c(region, country)
+  ) |> 
+  mutate(prop = freq/year) |> 
+  mutate(country = tidytext::reorder_within(country, prop, region)) |> 
+  slice_max(prop, n=10, by = region) |> 
+  ggplot(aes(country, prop, fill = region)) +
+    geom_col(show.legend = FALSE) +
+    facet_wrap(~region, scales = "free_y") +
+    coord_flip() +
+    tidytext::scale_x_reordered() +
+  labs(x = "Country",
+       title = "Top 10 country exposure to climate-related disasters, by region, 2000-2018",
+       subtitle = "Fraction of years with at least a disaster (i.e., treated periods) over all years",
+       caption = "Source: GDIS") +
+  theme_classic()
+```
+
 # Rank (intensity)
 
 ```{r rank}
@@ -232,7 +277,8 @@ panelview(1 ~ dis_dummy, data = data_treat,
           axis.lab = "time",
           by.timing = TRUE,                   
           background = "white",
-          main = "Treatment Status"
+          main = "All climate-related disasters",
+          ylab = "country"
           )
 
 ## Speed onset
